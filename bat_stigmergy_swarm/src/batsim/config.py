@@ -9,7 +9,7 @@ class SimConfig(BaseModel):
     fps: int = 30
 
     # Bats
-    n_bats: int = 20
+    n_bats: int = 40
     n_llm_bats: int = 1  # start with 1, optionally 2 later
     max_steps: int = 3000
 
