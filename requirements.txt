@@ -2,3 +2,4 @@ pygame
 numpy
 requests
 pydantic
+imageio

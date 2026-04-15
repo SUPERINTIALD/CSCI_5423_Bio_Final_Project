@@ -223,15 +223,48 @@ class Bat:
     prey_collected: int = 0
     predator_events: int = 0
     done: bool = False
+    last_ping_step: int = -999
+    heading: tuple[int, int] = (1, 0)
+    stuck_steps: int = 0
+
+    # def ping(self, world: World, cfg: SimConfig, max_d: int = 10):
+    #     """
+    #     Simple bat-like echolocation abstraction:
+    #     8 ray distances with noise.
+    #     """
+    #     self.last_ping_step = world.step_count
+    #     dirs = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
+    #     out = []
+    #     for dx, dy in dirs:
+    #         d = 0
+    #         cx, cy = self.x, self.y
+    #         for _ in range(max_d):
+    #             cx += dx
+    #             cy += dy
+    #             d += 1
+    #             if not world.in_bounds(cx, cy) or world.obstacles[cy, cx] == 1:
+    #                 break
+    #         noisy = d * (1 + random.uniform(-cfg.ping_noise, cfg.ping_noise))
+    #         out.append(round(noisy, 2))
+    #     return out
 
     def ping(self, world: World, cfg: SimConfig, max_d: int = 10):
         """
-        Simple bat-like echolocation abstraction:
-        8 ray distances with noise.
+        Labeled echolocation distances by direction.
         """
-        dirs = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
-        out = []
-        for dx, dy in dirs:
+        self.last_ping_step = world.step_count
+        dirs = {
+            "E":  (1, 0),
+            "SE": (1, 1),
+            "S":  (0, 1),
+            "SW": (-1, 1),
+            "W":  (-1, 0),
+            "NW": (-1, -1),
+            "N":  (0, -1),
+            "NE": (1, -1),
+        }
+        out = {}
+        for name, (dx, dy) in dirs.items():
             d = 0
             cx, cy = self.x, self.y
             for _ in range(max_d):
@@ -241,7 +274,7 @@ class Bat:
                 if not world.in_bounds(cx, cy) or world.obstacles[cy, cx] == 1:
                     break
             noisy = d * (1 + random.uniform(-cfg.ping_noise, cfg.ping_noise))
-            out.append(round(noisy, 2))
+            out[name] = round(noisy, 2)
         return out
 
     def local_patch(self, world: World, radius: int = 4) -> str:
@@ -295,17 +328,89 @@ class Bat:
                 d += 1
             out[name] = d
         return out
+    
+    def should_ping(self, world: World, base_prob=0.03, crowded_prob=0.18, crowd_radius=3):
+        nearby = 0
+        if not hasattr(world, "bat_positions"):
+            return random.random() < base_prob
 
+        for (bx, by) in world.bat_positions:
+            if (bx, by) == (self.x, self.y):
+                continue
+            if abs(bx - self.x) <= crowd_radius and abs(by - self.y) <= crowd_radius:
+                nearby += 1
 
+        p = crowded_prob if nearby >= 2 else base_prob
+        return random.random() < p
+
+    def legal_moves(self, world: World):
+        out = {}
+        for name, (dx, dy) in NAME_TO_DIR.items():
+            nx, ny = self.x + dx, self.y + dy
+            out[name] = world.is_free(nx, ny)
+        return out
+# class RuleBasedBat(Bat):
+#     def act(self, world: World, cfg: SimConfig):
+#         if self.done:
+#             return (0, 0), "NONE", "done"
+
+#         bx, by = self.x, self.y
+
+#         best = (0, 0)
+#         best_val = -1e9
+
+#         for dx, dy in DIRS:
+#             nx, ny = bx + dx, by + dy
+#             if not world.is_free(nx, ny):
+#                 continue
+
+#             val = 0.0
+
+#             # Task 1: move toward exit
+#             if cfg.task == 1:
+#                 val += 0.15 * nx
+#                 if (dx, dy) != (0, 0):
+#                     val += 0.02
+
+#             # Task 2: follow buzz, avoid alarm, seek prey, avoid predator
+#             if cfg.task == 2:
+#                 val += float(world.sound.buzz[ny, nx]) * 1.0
+#                 val -= float(world.sound.alarm[ny, nx]) * 1.3
+#                 if (nx, ny) in world.prey:
+#                     val += 3.0
+#                 if world.predator_risk(nx, ny) > 0:
+#                     val -= 5.0
+
+#             if val > best_val:
+#                 best_val = val
+#                 best = (dx, dy)
+
+#         call = "NONE"
+#         if cfg.task == 2:
+#             if world.predator_risk(self.x, self.y) > 0:
+#                 call = "ALARM"
+#             elif (self.x, self.y) in world.prey:
+#                 call = "BUZZ"
+
+#         return best, call, ""
 class RuleBasedBat(Bat):
     def act(self, world: World, cfg: SimConfig):
         if self.done:
             return (0, 0), "NONE", "done"
 
         bx, by = self.x, self.y
-
         best = (0, 0)
         best_val = -1e9
+
+        llm_target = None
+        if hasattr(world, "bats"):
+            for other in world.bats:
+                if isinstance(other, LLMBat) and not getattr(other, "done", False):
+                    llm_target = (other.x, other.y)
+                    break
+
+        prev_hx, prev_hy = self.heading
+        jammed = self.stuck_steps >= 2
 
         for dx, dy in DIRS:
             nx, ny = bx + dx, by + dy
@@ -314,20 +419,72 @@ class RuleBasedBat(Bat):
 
             val = 0.0
 
-            # Task 1: move toward exit
             if cfg.task == 1:
-                val += 0.15 * nx
-                if (dx, dy) != (0, 0):
-                    val += 0.02
+                # normal cave progress
+                val += 0.08 * dx
+                if dx > 0:
+                    val += 0.10
 
-            # Task 2: follow buzz, avoid alarm, seek prey, avoid predator
+                # strongly prefer open space around target
+                clearance_score = 0
+                for sx, sy in [(1,0), (1,-1), (1,1), (0,-1), (0,1), (-1,0), (-1,-1), (-1,1)]:
+                    tx, ty = nx, ny
+                    d = 0
+                    for _ in range(6):
+                        tx += sx
+                        ty += sy
+                        if not world.in_bounds(tx, ty) or not world.is_free(tx, ty):
+                            break
+                        d += 1
+                    clearance_score += d
+                val += 0.12 * clearance_score
+
+                # prefer cells with many free neighbors
+                free_neighbors = 0
+                for sx, sy in DIRS:
+                    tx, ty = nx + sx, ny + sy
+                    if world.is_free(tx, ty):
+                        free_neighbors += 1
+                val += 0.25 * free_neighbors
+
+                # slight directional persistence
+                if (dx, dy) == (prev_hx, prev_hy):
+                    val += 0.08
+
+                # small reward for moving toward informed bat, but less when jammed
+                if llm_target is not None:
+                    lx, ly = llm_target
+                    old_dist = abs(bx - lx) + abs(by - ly)
+                    new_dist = abs(nx - lx) + abs(ny - ly)
+                    if new_dist < old_dist:
+                        val += 0.10 if not jammed else 0.02
+
+                # if jammed, strongly prefer changing row / escaping bottleneck
+                if jammed:
+                    if dy != 0:
+                        val += 0.35
+                    if (dx, dy) == (0, 0):
+                        val -= 1.0
+
+                # discourage staying
+                if (dx, dy) == (0, 0):
+                    val -= 0.35
+
             if cfg.task == 2:
                 val += float(world.sound.buzz[ny, nx]) * 1.0
                 val -= float(world.sound.alarm[ny, nx]) * 1.3
+
                 if (nx, ny) in world.prey:
                     val += 3.0
                 if world.predator_risk(nx, ny) > 0:
                     val -= 5.0
+
+                free_neighbors = 0
+                for sx, sy in DIRS:
+                    tx, ty = nx + sx, ny + sy
+                    if world.is_free(tx, ty):
+                        free_neighbors += 1
+                val += 0.10 * free_neighbors
 
             if val > best_val:
                 best_val = val
@@ -341,8 +498,7 @@ class RuleBasedBat(Bat):
                 call = "BUZZ"
 
         return best, call, ""
-
-
+    
 class LLMBat(Bat):
     def __init__(self, x: int, y: int, client: LMStudioClient):
         super().__init__(x, y)
@@ -353,36 +509,52 @@ class LLMBat(Bat):
         self.stay_streak = 0
 
     def _build_prompt(self, obs: dict):
-        system = (
-            "You are controlling one bat in a 2D cave simulation.\n"
-            "Task 1 only: there is NO prey and NO predator.\n"
-            "Your goal is to leave the cave by reaching open space on the right side.\n"
-            "Use the local patch, ping distances, and clearance values to avoid walls and obstacles.\n"
-            "If blocked going East, choose a direction that increases free space while still progressing rightward.\n"
-            "Avoid STAY unless all nearby moves are unsafe.\n"
-            "Return EXACTLY these lines:\n"
-            "ACTION: <N|NE|E|SE|S|SW|W|NW|STAY>\n"
-            "CALL: <NONE|BUZZ|ALARM>\n"
-            "RATIONALE: <one short sentence>\n"
-        )
-
-        user = (
-            f"task={obs['task']}\n"
-            f"position={obs['position']}\n"
-            f"exit_hint={obs['exit_hint']}\n"
-            f"ping={obs['ping']}\n"
-            f"local_buzz={obs['local_buzz']:.3f}\n"
-            f"local_alarm={obs['local_alarm']:.3f}\n"
-            f"local_patch=\n{obs['local_patch']}\n"
-            f"clearance={obs['clearance']}\n"
-        )
+        if obs["task"] == 1:
+            system = (
+                "You are controlling one bat in a 2D cave simulation.\n"
+                "Task 1: there is NO prey and NO predator.\n"
+                "Your goal is to leave the cave by reaching open space on the RIGHT side.\n"
+                "You are given legal moves, directional clearance, and a local patch.\n"
+                "If East is blocked, choose another LEGAL move that increases free space while still progressing rightward.\n"
+                "Do NOT output a blocked move.\n"
+                "Return EXACTLY these lines:\n"
+                "ACTION: <N|NE|E|SE|S|SW|W|NW|STAY>\n"
+                "RATIONALE: <one short sentence>\n"
+            )
+            user = (
+                f"position={obs['position']}\n"
+                f"exit_hint={obs['exit_hint']}\n"
+                f"legal_moves={obs['legal_moves']}\n"
+                f"clearance={obs['clearance']}\n"
+                f"ping={obs['ping']}\n"
+                f"local_patch=\n{obs['local_patch']}\n"
+            )
+        else:
+            system = (
+                "You are controlling one bat in a 2D environment.\n"
+                "Task 2: collect prey and avoid predator danger.\n"
+                "Use local cues and soundscape traces.\n"
+                "Return EXACTLY these lines:\n"
+                "ACTION: <N|NE|E|SE|S|SW|W|NW|STAY>\n"
+                "CALL: <NONE|BUZZ|ALARM>\n"
+                "RATIONALE: <one short sentence>\n"
+            )
+            user = (
+                f"position={obs['position']}\n"
+                f"legal_moves={obs['legal_moves']}\n"
+                f"clearance={obs['clearance']}\n"
+                f"ping={obs['ping']}\n"
+                f"local_buzz={obs['local_buzz']:.3f}\n"
+                f"local_alarm={obs['local_alarm']:.3f}\n"
+                f"local_patch=\n{obs['local_patch']}\n"
+            )
 
         return [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ]
 
-    def _parse(self, text: str):
+    def _parse(self, text: str, task: int):
         move = "STAY"
         call = "NONE"
         rationale = ""
@@ -390,9 +562,7 @@ class LLMBat(Bat):
         for line in text.splitlines():
             s = line.strip()
             if s.upper().startswith("ACTION:"):
-                rhs = s.split(":", 1)[1].strip().upper()
-                rhs = rhs.replace("MOVE", "").strip()
-                move = rhs
+                move = s.split(":", 1)[1].strip().upper().replace("MOVE", "").strip()
             elif s.upper().startswith("CALL:"):
                 call = s.split(":", 1)[1].strip().upper()
             elif s.upper().startswith("RATIONALE:"):
@@ -400,7 +570,10 @@ class LLMBat(Bat):
 
         if move not in NAME_TO_DIR:
             move = "STAY"
-        if call not in {"NONE", "BUZZ", "ALARM"}:
+
+        if task == 1:
+            call = "NONE"
+        elif call not in {"NONE", "BUZZ", "ALARM"}:
             call = "NONE"
 
         return NAME_TO_DIR[move], call, rationale
@@ -415,18 +588,18 @@ class LLMBat(Bat):
             "position": (self.x, self.y),
             "exit_hint": "RIGHT",
             "ping": self.ping(world, cfg),
-            "local_buzz": float(world.sound.buzz[self.y, self.x]),
-            "local_alarm": float(world.sound.alarm[self.y, self.x]),
             "local_patch": self.local_patch(world, radius=4),
             "clearance": self.directional_clearance(world),
+            "legal_moves": self.legal_moves(world),
+            "local_buzz": float(world.sound.buzz[self.y, self.x]),
+            "local_alarm": float(world.sound.alarm[self.y, self.x]),
         }
-
         msgs = self._build_prompt(obs)
         out = self.client.chat(msgs, max_tokens=80)
         print("LLM RAW OUTPUT:\n", out)
 
-        action, call, rationale = self._parse(out)
-
+        # action, call, rationale = self._parse(out)
+        action, call, rationale = self._parse(out, cfg.task)
         if action == (0, 0):
             self.stay_streak += 1
         else:
