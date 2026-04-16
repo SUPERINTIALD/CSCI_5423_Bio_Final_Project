@@ -21,34 +21,34 @@ class World:
         # 1 = obstacle, 0 = free
         self.obstacles = np.ones((self.h, self.w), dtype=np.uint8)
 
-        # Start of the outside/emergence zone
+        # shared fields
         self.outside_x0 = self.w - 90
         self.exit_x0 = self.outside_x0
 
-        self._spawn_cave()
-        self._add_rock_blobs(n_blobs=10, r_min=1, r_max=3)
-
-        # Task 1: KEEP OUTSIDE FULLY OPEN
-        # Task 2: add clutter only farther outside
+        # task-specific world generation
         if self.cfg.task == 1:
-            self.obstacles[:, self.outside_x0:] = 0
+            self._spawn_task1_cave()
         else:
-            self._add_outside_clutter(
-                n_patches=30,
-                patch_r_min=2,
-                patch_r_max=4,
-                clutter_start_x=self.outside_x0 + 30,
-            )
+            self._spawn_task2_open_world()
 
         self.outside_field = self._build_outside_field()
 
+        # dynamic entities
         self.prey = set()
         self._spawn_prey()
-        self.predator_pos = (min(self.w - 10, self.outside_x0 + 40), self.h // 2)
+
+        self.predator_pos = (min(self.w - 12, self.outside_x0 + 35), self.h // 2)
+        self.predator_heading = (-1, 0)
 
         self.sound = Soundscape(self.h, self.w, decay=cfg.decay, diffuse=cfg.diffuse)
 
-    def _spawn_cave(self):
+    # -------------------------
+    # TASK 1 WORLD
+    # -------------------------
+    def _spawn_task1_cave(self):
+        """
+        Cave on the left, long open outside on the right.
+        """
         center_y = self.h // 2
         corridor_half = max(3, self.h // 10)
 
@@ -64,8 +64,12 @@ class World:
                 y1 = min(self.h - 2, center_y + local_half)
                 self.obstacles[y0:y1 + 1, x] = 0
             else:
-                # outside open by default
                 self.obstacles[:, x] = 0
+
+        self._add_rock_blobs(n_blobs=10, r_min=1, r_max=3)
+
+        # fully open outside region for task 1
+        self.obstacles[:, self.outside_x0:] = 0
 
     def _add_rock_blobs(self, n_blobs=10, r_min=1, r_max=3):
         placed = 0
@@ -89,17 +93,26 @@ class World:
 
             placed += 1
 
-    def _add_outside_clutter(self, n_patches=30, patch_r_min=2, patch_r_max=4, clutter_start_x=None):
-        if clutter_start_x is None:
-            clutter_start_x = self.outside_x0 + 30
+    # -------------------------
+    # TASK 2 WORLD
+    # -------------------------
+    def _spawn_task2_open_world(self):
+        """
+        Open outside world with scattered clutter.
+        No cave corridor.
+        """
+        self.outside_x0 = 0
+        self.exit_x0 = 0
 
-        x_min = min(max(clutter_start_x, self.outside_x0 + 1), self.w - 10)
-        x_max = self.w - 8
-        if x_min >= x_max:
-            return
+        # start fully open
+        self.obstacles[:, :] = 0
 
+        # add sparse tree-like clutter
+        self._add_open_world_clutter(n_patches=45, patch_r_min=2, patch_r_max=4)
+
+    def _add_open_world_clutter(self, n_patches=45, patch_r_min=2, patch_r_max=4):
         for _ in range(n_patches):
-            cx = self.rng.randint(x_min, x_max)
+            cx = self.rng.randint(8, self.w - 8)
             cy = self.rng.randint(4, self.h - 5)
             rad = self.rng.randint(patch_r_min, patch_r_max)
 
@@ -108,6 +121,9 @@ class World:
                     if (x - cx) ** 2 + (y - cy) ** 2 <= rad * rad:
                         self.obstacles[y, x] = 1
 
+    # -------------------------
+    # SHARED HELPERS
+    # -------------------------
     def _build_outside_field(self):
         field = np.zeros((self.h, self.w), dtype=np.float32)
         for y in range(self.h):
@@ -122,17 +138,70 @@ class World:
             return
 
         tries = 0
-        max_tries = self.cfg.n_prey * 50
-        prey_x0 = min(self.w - 5, self.outside_x0 + 25)
+        max_tries = self.cfg.n_prey * 100
 
         while len(self.prey) < self.cfg.n_prey and tries < max_tries:
             tries += 1
-            x = self.rng.randrange(prey_x0, self.w - 3)
+            x = self.rng.randrange(4, self.w - 4)
             y = self.rng.randrange(2, self.h - 2)
-
             if self.obstacles[y, x] == 0:
                 self.prey.add((x, y))
 
+    def _move_prey(self):
+        if self.cfg.task != 2 or not self.prey:
+            return
+
+        new_prey = set()
+        for (x, y) in self.prey:
+            # prey moves only sometimes
+            if self.rng.random() < 0.35:
+                dx, dy = self.rng.choice(DIRS)
+                nx, ny = x + dx, y + dy
+                if self.is_free(nx, ny):
+                    new_prey.add((nx, ny))
+                else:
+                    new_prey.add((x, y))
+            else:
+                new_prey.add((x, y))
+        self.prey = new_prey
+
+    def _move_predator(self):
+        if self.cfg.task != 2:
+            return
+
+        px, py = self.predator_pos
+
+        # if bats are known, weakly chase nearest nearby bat
+        target = None
+        if hasattr(self, "bats"):
+            active = [b for b in self.bats if not getattr(b, "done", False)]
+            if active:
+                nearest = min(active, key=lambda b: abs(b.x - px) + abs(b.y - py))
+                dist = abs(nearest.x - px) + abs(nearest.y - py)
+                if dist <= 18:
+                    target = nearest
+
+        if target is not None:
+            dx = 0 if target.x == px else (1 if target.x > px else -1)
+            dy = 0 if target.y == py else (1 if target.y > py else -1)
+            candidates = [(dx, dy), (dx, 0), (0, dy)] + DIRS
+        else:
+            # random patrol / persistence
+            candidates = [self.predator_heading] + DIRS
+
+        self.rng.shuffle(candidates)
+
+        for dx, dy in candidates:
+            nx, ny = px + dx, py + dy
+            if self.is_free(nx, ny):
+                self.predator_pos = (nx, ny)
+                if (dx, dy) != (0, 0):
+                    self.predator_heading = (dx, dy)
+                return
+
+    # -------------------------
+    # API
+    # -------------------------
     def in_bounds(self, x: int, y: int) -> bool:
         return 0 <= x < self.w and 0 <= y < self.h
 
@@ -153,4 +222,9 @@ class World:
 
     def step(self):
         self.step_count += 1
+
+        if self.cfg.task == 2:
+            self._move_prey()
+            self._move_predator()
+
         self.sound.step()
