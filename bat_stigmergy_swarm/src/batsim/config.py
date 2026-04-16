@@ -13,9 +13,9 @@ class SimConfig(BaseModel):
     fps: int = 30
 
     # Bats
-    n_bats: int = 40
+    n_bats: int = 20
     n_llm_bats: int = 1
-    max_steps: int = 3000
+    max_steps: int = 1000
 
     # Task
     task: int = 1  # 1 = cave exit, 2 = predator/prey outside cave

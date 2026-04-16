@@ -557,16 +557,20 @@ def main():
 
         draw(screen, cfg, world, bats, font, info, camera_x, camera_y)
         pygame.display.flip()
-        if record_gif and world.step_count % 2 == 0:
-            frame_path = f"frames/frame_{world.step_count:05d}.png"
-            pygame.image.save(screen, frame_path)
-            saved_frames.append(frame_path)
-            
-        if record_gif and saved_frames:
-            images = [imageio.imread(fp) for fp in saved_frames]
-            gif_name = f"gifs/task_{cfg.task}_run.gif"
-            imageio.mimsave(gif_name, images, fps=12)
-            print(f"Saved GIF to {gif_name}")
+
+
+
+        #===================================GIF RECORDING (optional)===================================
+        # if record_gif and world.step_count % 2 == 0:
+        #     frame_path = f"frames/frame_{world.step_count:05d}.png"
+        #     pygame.image.save(screen, frame_path)
+        #     saved_frames.append(frame_path)
+
+        # if record_gif and saved_frames:
+        #     images = [imageio.imread(fp) for fp in saved_frames]
+        #     gif_name = f"gifs/task_{cfg.task}_run.gif"
+        #     imageio.mimsave(gif_name, images, fps=12)
+        #     print(f"Saved GIF to {gif_name}")
     pygame.quit()
 
 
