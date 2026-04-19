@@ -226,7 +226,10 @@ class Bat:
     last_ping_step: int = -999
     heading: tuple[int, int] = (1, 0)
     stuck_steps: int = 0
-
+    last_call_step: int = -999
+    last_call_type: str = "NONE"
+    hungry: bool = True
+    alive: bool = True
     # def ping(self, world: World, cfg: SimConfig, max_d: int = 10):
     #     """
     #     Simple bat-like echolocation abstraction:
@@ -248,9 +251,38 @@ class Bat:
     #         out.append(round(noisy, 2))
     #     return out
 
+    # def ping(self, world: World, cfg: SimConfig, max_d: int = 10):
+    #     """
+    #     Labeled echolocation distances by direction.
+    #     """
+    #     self.last_ping_step = world.step_count
+    #     dirs = {
+    #         "E":  (1, 0),
+    #         "SE": (1, 1),
+    #         "S":  (0, 1),
+    #         "SW": (-1, 1),
+    #         "W":  (-1, 0),
+    #         "NW": (-1, -1),
+    #         "N":  (0, -1),
+    #         "NE": (1, -1),
+    #     }
+    #     out = {}
+    #     for name, (dx, dy) in dirs.items():
+    #         d = 0
+    #         cx, cy = self.x, self.y
+    #         for _ in range(max_d):
+    #             cx += dx
+    #             cy += dy
+    #             d += 1
+    #             if not world.in_bounds(cx, cy) or world.obstacles[cy, cx] == 1:
+    #                 break
+    #         noisy = d * (1 + random.uniform(-cfg.ping_noise, cfg.ping_noise))
+    #         out[name] = round(noisy, 2)
+    #     return out
     def ping(self, world: World, cfg: SimConfig, max_d: int = 10):
         """
         Labeled echolocation distances by direction.
+        In task 2, the world wraps toroidally.
         """
         self.last_ping_step = world.step_count
         dirs = {
@@ -270,13 +302,22 @@ class Bat:
             for _ in range(max_d):
                 cx += dx
                 cy += dy
+
+                if world.cfg.task == 2:
+                    cx, cy = world.wrap_xy(cx, cy)
+
                 d += 1
-                if not world.in_bounds(cx, cy) or world.obstacles[cy, cx] == 1:
+
+                if world.cfg.task == 1:
+                    if not world.in_bounds(cx, cy):
+                        break
+
+                if world.obstacles[cy, cx] == 1:
                     break
+
             noisy = d * (1 + random.uniform(-cfg.ping_noise, cfg.ping_noise))
             out[name] = round(noisy, 2)
         return out
-
     def local_patch(self, world: World, radius: int = 4) -> str:
         """
         Tiny symbolic local map.
@@ -291,23 +332,49 @@ class Bat:
         for yy in range(self.y - radius, self.y + radius + 1):
             row = ""
             for xx in range(self.x - radius, self.x + radius + 1):
+                if world.cfg.task == 2:
+                    wx, wy = world.wrap_xy(xx, yy)
+                else:
+                    wx, wy = xx, yy
+
                 if xx == self.x and yy == self.y:
                     row += "X"
-                elif not world.in_bounds(xx, yy):
+                elif not world.in_bounds(wx, wy):
                     row += "#"
-                elif world.obstacles[yy, xx] == 1:
+                elif world.obstacles[wy, wx] == 1:
                     row += "#"
-                elif world.cfg.task == 1 and world.is_exit(xx):
+                elif world.cfg.task == 1 and world.is_exit(wx):
                     row += "E"
-                elif world.cfg.task == 2 and (xx, yy) in world.prey:
+                elif world.cfg.task == 2 and (wx, wy) in world.prey:
                     row += "P"
-                elif world.cfg.task == 2 and (xx, yy) == world.predator_pos:
+                elif world.cfg.task == 2 and (wx, wy) == world.predator_pos:
                     row += "D"
                 else:
                     row += "."
             rows.append(row)
         return "\n".join(rows)
     
+    # def directional_clearance(self, world: World, max_d: int = 8):
+    #     dirs = {
+    #         "E": (1, 0),
+    #         "NE": (1, -1),
+    #         "SE": (1, 1),
+    #         "N": (0, -1),
+    #         "S": (0, 1),
+    #     }
+    #     out = {}
+    #     for name, (dx, dy) in dirs.items():
+    #         d = 0
+    #         cx, cy = self.x, self.y
+    #         for _ in range(max_d):
+    #             cx += dx
+    #             cy += dy
+    #             if not world.in_bounds(cx, cy) or world.obstacles[cy, cx] == 1:
+    #                 break
+    #             d += 1
+    #         out[name] = d
+    #     return out
+
     def directional_clearance(self, world: World, max_d: int = 8):
         dirs = {
             "E": (1, 0),
@@ -323,8 +390,16 @@ class Bat:
             for _ in range(max_d):
                 cx += dx
                 cy += dy
-                if not world.in_bounds(cx, cy) or world.obstacles[cy, cx] == 1:
+
+                if world.cfg.task == 2:
+                    cx, cy = world.wrap_xy(cx, cy)
+
+                if world.cfg.task == 1 and not world.in_bounds(cx, cy):
                     break
+
+                if world.obstacles[cy, cx] == 1:
+                    break
+
                 d += 1
             out[name] = d
         return out
@@ -413,7 +488,10 @@ class RuleBasedBat(Bat):
         jammed = self.stuck_steps >= 2
 
         for dx, dy in DIRS:
-            nx, ny = bx + dx, by + dy
+            if cfg.task == 2:
+                nx, ny = world.wrap_xy(bx + dx, by + dy)
+            else:
+                nx, ny = bx + dx, by + dy
             if not world.is_free(nx, ny):
                 continue
 
@@ -442,7 +520,11 @@ class RuleBasedBat(Bat):
                 # prefer cells with many free neighbors
                 free_neighbors = 0
                 for sx, sy in DIRS:
-                    tx, ty = nx + sx, ny + sy
+                    if cfg.task == 2:
+                        tx, ty = world.wrap_xy(nx + sx, ny + sy)
+                    else:
+                        tx, ty = nx + sx, ny + sy
+
                     if world.is_free(tx, ty):
                         free_neighbors += 1
                 val += 0.25 * free_neighbors
@@ -471,32 +553,77 @@ class RuleBasedBat(Bat):
                     val -= 0.35
 
             if cfg.task == 2:
-                val += float(world.sound.buzz[ny, nx]) * 1.0
-                val -= float(world.sound.alarm[ny, nx]) * 1.3
+                buzz_weight = 2.2 if self.hungry else 0.2
+                alarm_weight = 2.5
 
+                val += float(world.sound.buzz[ny, nx]) * buzz_weight
+                val -= float(world.sound.alarm[ny, nx]) * alarm_weight
+
+                # direct prey seeking
                 if (nx, ny) in world.prey:
-                    val += 3.0
+                    val += 8.0 if self.hungry else 1.0
+
+                # avoid predator hard
                 if world.predator_risk(nx, ny) > 0:
-                    val -= 5.0
+                    val -= 20.0
+
+                px, py = world.predator_pos
+                old_pd_x = abs(bx - px)
+                old_pd_y = abs(by - py)
+                new_pd_x = abs(nx - px)
+                new_pd_y = abs(ny - py)
+
+                old_pd_x = min(old_pd_x, world.w - old_pd_x)
+                old_pd_y = min(old_pd_y, world.h - old_pd_y)
+                new_pd_x = min(new_pd_x, world.w - new_pd_x)
+                new_pd_y = min(new_pd_y, world.h - new_pd_y)
+
+                if (new_pd_x + new_pd_y) > (old_pd_x + old_pd_y):
+                    val += 1.5
+
+                # leader following only if hungry and safe
+                if llm_target is not None and self.hungry and world.predator_risk(nx, ny) == 0:
+                    lx, ly = llm_target
+                    old_ld = abs(bx - lx) + abs(by - ly)
+                    new_ld = abs(nx - lx) + abs(ny - ly)
+                    if new_ld < old_ld:
+                        val += 0.6
 
                 free_neighbors = 0
                 for sx, sy in DIRS:
                     tx, ty = nx + sx, ny + sy
                     if world.is_free(tx, ty):
                         free_neighbors += 1
-                val += 0.10 * free_neighbors
+                val += 0.12 * free_neighbors
 
-            if val > best_val:
-                best_val = val
-                best = (dx, dy)
+                if (dx, dy) == (0, 0):
+                    val -= 0.5
+
+                if val > best_val:
+                    best_val = val
+                    best = (dx, dy)
 
         call = "NONE"
+        # if cfg.task == 2:
+        #     if world.predator_risk(self.x, self.y) > 0:
+        #         call = "ALARM"
+        #     elif (self.x, self.y) in world.prey:
+        #         call = "BUZZ"
         if cfg.task == 2:
             if world.predator_risk(self.x, self.y) > 0:
                 call = "ALARM"
-            elif (self.x, self.y) in world.prey:
-                call = "BUZZ"
-
+            elif self.hungry:
+                prey_near = False
+                for px, py in world.prey:
+                    dx = abs(self.x - px)
+                    dy = abs(self.y - py)
+                    dx = min(dx, world.w - dx) if cfg.task == 2 else dx
+                    dy = min(dy, world.h - dy) if cfg.task == 2 else dy
+                    if dx <= 2 and dy <= 2:
+                        prey_near = True
+                        break
+                if prey_near:
+                    call = "BUZZ"
         return best, call, ""
     
 class LLMBat(Bat):
@@ -530,10 +657,27 @@ class LLMBat(Bat):
                 f"local_patch=\n{obs['local_patch']}\n"
             )
         else:
+            # system = (
+            #     "You are controlling one bat in a 2D outside environment.\n"
+            #     "Task 2: collect prey and avoid predator danger.\n"
+            #     "Use legal moves, ping, soundscape traces, and local patch.\n"
+            #     "If predator danger is nearby, use CALL: ALARM.\n"
+            #     "If prey is found or strongly indicated, use CALL: BUZZ.\n"
+            #     "Return EXACTLY these lines:\n"
+            #     "ACTION: <N|NE|E|SE|S|SW|W|NW|STAY>\n"
+            #     "CALL: <NONE|BUZZ|ALARM>\n"
+            #     "RATIONALE: <one short sentence>\n"
+            # )
             system = (
-                "You are controlling one bat in a 2D environment.\n"
+                "You are controlling one bat in a 2D outside environment.\n"
                 "Task 2: collect prey and avoid predator danger.\n"
-                "Use local cues and soundscape traces.\n"
+                "IMPORTANT: the world wraps around like a torus. "
+                "If you move off the left edge you appear on the right edge, "
+                "and if you move off the top edge you appear on the bottom edge.\n"
+                "Use legal moves, ping, soundscape traces, and local patch.\n"
+                "The local patch is centered on you, but the world edges connect.\n"
+                "If predator danger is nearby, use CALL: ALARM.\n"
+                "If prey is found or strongly indicated, use CALL: BUZZ.\n"
                 "Return EXACTLY these lines:\n"
                 "ACTION: <N|NE|E|SE|S|SW|W|NW|STAY>\n"
                 "CALL: <NONE|BUZZ|ALARM>\n"

@@ -414,6 +414,106 @@ from .batsim.world import World
 from .batsim.agents import RuleBasedBat, LLMBat
 from .llm.lm_studio_client import LMStudioClient
 
+class Slider:
+    def __init__(self, label, x, y, w, min_val, max_val, value, step=1):
+        self.label = label
+        self.rect = pygame.Rect(x, y, w, 8)
+        self.knob_radius = 10
+        self.min_val = min_val
+        self.max_val = max_val
+        self.value = value
+        self.step = step
+        self.dragging = False
+
+    def value_to_pos(self):
+        t = (self.value - self.min_val) / max(1e-9, (self.max_val - self.min_val))
+        return int(self.rect.x + t * self.rect.w)
+
+    def pos_to_value(self, mx):
+        t = (mx - self.rect.x) / max(1, self.rect.w)
+        t = max(0.0, min(1.0, t))
+        raw = self.min_val + t * (self.max_val - self.min_val)
+        if self.step >= 1:
+            raw = round(raw / self.step) * self.step
+        return int(raw) if self.step >= 1 else raw
+
+    def handle_event(self, event):
+        knob_x = self.value_to_pos()
+        knob_rect = pygame.Rect(
+            knob_x - self.knob_radius,
+            self.rect.centery - self.knob_radius,
+            self.knob_radius * 2,
+            self.knob_radius * 2
+        )
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if knob_rect.collidepoint(event.pos) or self.rect.inflate(0, 20).collidepoint(event.pos):
+                self.dragging = True
+                self.value = self.pos_to_value(event.pos[0])
+                return True
+
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.dragging = False
+
+        elif event.type == pygame.MOUSEMOTION and self.dragging:
+            self.value = self.pos_to_value(event.pos[0])
+            return True
+
+        return False
+
+    def draw(self, screen, font, panel_color=(35, 35, 45)):
+        # label
+        label_surf = font.render(f"{self.label}: {self.value}", True, (240, 240, 240))
+        screen.blit(label_surf, (self.rect.x, self.rect.y - 24))
+
+        # line
+        pygame.draw.rect(screen, (90, 90, 110), self.rect, border_radius=4)
+
+        # fill
+        fill_w = self.value_to_pos() - self.rect.x
+        if fill_w > 0:
+            pygame.draw.rect(
+                screen,
+                (120, 170, 255),
+                pygame.Rect(self.rect.x, self.rect.y, fill_w, self.rect.h),
+                border_radius=4
+            )
+
+        # knob
+        knob_x = self.value_to_pos()
+        pygame.draw.circle(screen, (230, 230, 240), (knob_x, self.rect.centery), self.knob_radius)
+        pygame.draw.circle(screen, (60, 60, 80), (knob_x, self.rect.centery), self.knob_radius, width=2)
+
+def draw_ui_panel(screen, ui_font, sliders, apply_button, panel_x, panel_y, panel_w, panel_h):
+    panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+    pygame.draw.rect(screen, (25, 25, 35), panel_rect, border_radius=12)
+    pygame.draw.rect(screen, (80, 80, 100), panel_rect, width=2, border_radius=12)
+
+    title = ui_font.render("Task Controls", True, (255, 255, 255))
+    screen.blit(title, (panel_x + 20, panel_y + 10))
+
+    for s in sliders:
+        s.draw(screen, ui_font)
+
+    apply_button.draw(screen, ui_font)
+
+class Button:
+    def __init__(self, label, rect):
+        self.label = label
+        self.rect = pygame.Rect(rect)
+
+    def handle_event(self, event):
+        return event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.rect.collidepoint(event.pos)
+
+    def draw(self, screen, font, bg=(70, 100, 70), fg=(255, 255, 255)):
+        pygame.draw.rect(screen, bg, self.rect, border_radius=8)
+        pygame.draw.rect(screen, (30, 30, 30), self.rect, width=2, border_radius=8)
+        surf = font.render(self.label, True, fg)
+        screen.blit(
+            surf,
+            (self.rect.centerx - surf.get_width() // 2, self.rect.centery - surf.get_height() // 2)
+        )
+
 
 def spawn_positions_for_task(world, cfg):
     if cfg.task == 1:
@@ -518,8 +618,11 @@ def choose_resolved_move(world, bat, preferred, reserved_next):
     best_score = -1e9
 
     for mdx, mdy in candidate_moves_for_bat(bat, preferred):
-        nx, ny = bat.x + mdx, bat.y + mdy
-
+        # nx, ny = world.wrap_xy(bat.x + mdx, bat.y + mdy) if world.cfg.task == 2 else (bat.x + mdx, bat.y + mdy)
+        if world.cfg.task == 2:
+            nx, ny = world.wrap_xy(bat.x + mdx, bat.y + mdy)
+        else:
+            nx, ny = bat.x + mdx, bat.y + mdy
         if not world.is_free(nx, ny):
             continue
         if (nx, ny) in reserved_next:
@@ -601,19 +704,41 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
             if -cfg.cell_px <= sx <= cfg.window_w and -cfg.cell_px <= sy <= cfg.window_h:
                 pygame.draw.rect(
                     screen,
-                    (230, 210, 80),
+                    (255, 230, 90),
                     (sx + 2, sy + 2, max(2, cfg.cell_px - 4), max(2, cfg.cell_px - 4)),
                 )
 
+        # px, py = world.predator_pos
+        # pygame.draw.circle(
+        #     screen,
+        #     (120, 20, 20),
+        #     (px * cfg.cell_px + cfg.cell_px // 2 - camera_x,
+        #     py * cfg.cell_px + cfg.cell_px // 2 - camera_y),
+        #     max(10, cfg.predator_radius * cfg.cell_px),
+        #     width=2,
+        # )
+
+        # predator
         px, py = world.predator_pos
-        pygame.draw.circle(
+        pcx = px * cfg.cell_px + cfg.cell_px // 2 - camera_x
+        pcy = py * cfg.cell_px + cfg.cell_px // 2 - camera_y
+        pr = max(12, cfg.predator_radius * cfg.cell_px)
+
+        # wings
+        pygame.draw.polygon(
             screen,
-            (200, 80, 80),
-            (px * cfg.cell_px + cfg.cell_px // 2 - camera_x,
-             py * cfg.cell_px + cfg.cell_px // 2 - camera_y),
-            cfg.predator_radius * cfg.cell_px,
-            width=2,
+            (110, 20, 20),
+            [(pcx - pr, pcy), (pcx - pr // 3, pcy - pr // 2), (pcx - pr // 3, pcy + pr // 2)]
         )
+        pygame.draw.polygon(
+            screen,
+            (110, 20, 20),
+            [(pcx + pr, pcy), (pcx + pr // 3, pcy - pr // 2), (pcx + pr // 3, pcy + pr // 2)]
+        )
+
+        # body
+        pygame.draw.circle(screen, (170, 30, 30), (pcx, pcy), pr // 2)
+        pygame.draw.circle(screen, (60, 10, 10), (pcx, pcy), pr // 2, width=2)
 
     # bats
     for b in bats:
@@ -638,12 +763,44 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
         tip_x = cx + hx * 8
         tip_y = cy + hy * 8
         pygame.draw.line(screen, (255, 255, 255), (cx, cy), (tip_x, tip_y), 2)
+        
+        # show recent social calls in Task 2
+        if cfg.task == 2 and world.step_count - getattr(b, "last_call_step", -999) <= 6:
+            if getattr(b, "last_call_type", "NONE") == "BUZZ":
+                call_color = (255, 230, 90)   # bright yellow
+                radii = [14, 22]
+            elif getattr(b, "last_call_type", "NONE") == "ALARM":
+                call_color = (170, 90, 255)   # alarm color (purple, non-red)
+                radii = [16, 26]
+            else:
+                call_color = None
+                radii = []
 
+            if call_color is not None:
+                for r in radii:
+                    pygame.draw.circle(screen, call_color, (cx, cy), r, width=2)    
     y0 = 8
     for line in info_lines:
         surf = font.render(line, True, (235, 235, 235))
         screen.blit(surf, (8, y0))
         y0 += 20
+
+
+def build_world_and_bats(cfg, client):
+    world = World(cfg, seed=random.randint(0, 999999))
+    bats = []
+    spawn_positions = spawn_positions_for_task(world, cfg)
+
+    for i in range(cfg.n_llm_bats):
+        x, y = spawn_positions[i]
+        bats.append(LLMBat(x, y, client))
+
+    for i in range(cfg.n_llm_bats, cfg.n_bats):
+        x, y = spawn_positions[i]
+        bats.append(RuleBasedBat(x, y))
+
+    world.bats = bats
+    return world, bats
 
 
 def main():
@@ -663,21 +820,36 @@ def main():
     pygame.display.set_caption("Bat Stigmergy Swarm")
     clock = pygame.time.Clock()
     font = pygame.font.SysFont("consolas", 18)
-
-    world = World(cfg, seed=0)
     client = LMStudioClient(cfg.llm_base_url, cfg.llm_model, cfg.llm_temperature)
+    world, bats = build_world_and_bats(cfg, client)
+    # world = World(cfg, seed=0)
+    # client = LMStudioClient(cfg.llm_base_url, cfg.llm_model, cfg.llm_temperature)
 
-    bats = []
-    spawn_positions = spawn_positions_for_task(world, cfg)
+    # bats = []
+    # spawn_positions = spawn_positions_for_task(world, cfg)
 
-    for i in range(cfg.n_llm_bats):
-        x, y = spawn_positions[i]
-        bats.append(LLMBat(x, y, client))
+    # for i in range(cfg.n_llm_bats):
+    #     x, y = spawn_positions[i]
+    #     bats.append(LLMBat(x, y, client))
 
-    for i in range(cfg.n_llm_bats, cfg.n_bats):
-        x, y = spawn_positions[i]
-        bats.append(RuleBasedBat(x, y))
+    # for i in range(cfg.n_llm_bats, cfg.n_bats):
+    #     x, y = spawn_positions[i]
+    #     bats.append(RuleBasedBat(x, y))
+    ui_font = pygame.font.SysFont("consolas", 16)
 
+    panel_x = cfg.window_w - 260
+    panel_y = 20
+    panel_w = 240
+    panel_h = 250
+
+    sliders = [
+        Slider("Bats", panel_x + 20, panel_y + 40, 180, 4, 60, cfg.n_bats, step=1),
+        Slider("LLM Bats", panel_x + 20, panel_y + 95, 180, 1, 8, cfg.n_llm_bats, step=1),
+        Slider("Prey", panel_x + 20, panel_y + 150, 180, 10, 200, cfg.n_prey, step=5),
+        Slider("Pred Radius", panel_x + 20, panel_y + 205, 180, 2, 20, cfg.predator_radius, step=1),
+    ]
+
+    apply_button = Button("Apply / Reset", (panel_x + 20, panel_y + 235, 180, 34))
     world.bats = bats
     running = True
     llm_last_rationale = ""
@@ -688,6 +860,20 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            for s in sliders:
+                s.handle_event(event)
+
+            if apply_button.handle_event(event):
+                # push slider values into config
+                cfg.n_bats = int(sliders[0].value)
+                cfg.n_llm_bats = min(int(sliders[1].value), cfg.n_bats)
+                sliders[1].value = cfg.n_llm_bats  # keep UI consistent
+                cfg.n_prey = int(sliders[2].value)
+                cfg.predator_radius = int(sliders[3].value)
+
+                # rebuild sim
+                world, bats = build_world_and_bats(cfg, client)
+                llm_last_rationale = ""
 
         if world.step_count % cfg.llm_decision_period == 0:
             for b in bats:
@@ -762,7 +948,21 @@ def main():
                 if b.x >= outside_success_x:
                     b.done = True
                     b.score += 50.0
+            if cfg.task == 2:
+                px, py = world.predator_pos
+                dxp = abs(b.x - px)
+                dyp = abs(b.y - py)
+                dxp = min(dxp, world.w - dxp) if cfg.task == 2 else dxp
+                dyp = min(dyp, world.h - dyp) if cfg.task == 2 else dyp
 
+                if dxp * dxp + dyp * dyp <= max(2, cfg.predator_radius // 2) ** 2:
+                    b.alive = False
+                    b.done = True
+                    b.score -= 200.0
+                    if isinstance(b, LLMBat):
+                        llm_last_rationale = "LLM bat died to predator."
+                    continue
+                
             if cfg.task == 2:
                 if world.predator_risk(b.x, b.y) > 0:
                     b.predator_events += 1
@@ -773,13 +973,28 @@ def main():
                     world.prey.remove((b.x, b.y))
                     b.prey_collected += 1
                     b.score += cfg.prey_reward
+                    b.hungry = False
                     world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit)
+            if cfg.task == 2 and world.step_count % 10 == 0:
+                # print("Predator:", world.predator_pos)
+                # for i, b in enumerate(bats[:5]):
+                    # print(f"Bat {i}: {(b.x, b.y)}")
+                # if call == "BUZZ":
+                #     world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit * 0.5)
+                # elif call == "ALARM":
+                #     world.sound.deposit_alarm(b.x, b.y, cfg.alarm_deposit * 0.5)
+
 
                 if call == "BUZZ":
-                    world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit * 0.5)
+                    world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit * 0.75)
+                    b.last_call_step = world.step_count
+                    b.last_call_type = "BUZZ"
                 elif call == "ALARM":
-                    world.sound.deposit_alarm(b.x, b.y, cfg.alarm_deposit * 0.5)
-
+                    world.sound.deposit_alarm(b.x, b.y, cfg.alarm_deposit * 0.75)
+                    b.last_call_step = world.step_count
+                    b.last_call_type = "ALARM"
+                else:
+                    b.last_call_type = "NONE"
         world.step()
 
         if world.step_count >= cfg.max_steps:
@@ -788,32 +1003,46 @@ def main():
         if cfg.task == 1 and all(getattr(b, "done", False) for b in bats):
             running = False
 
-        active_bats = [b for b in bats if not getattr(b, "done", False)]
-        if active_bats:
-            avg_x = sum(b.x for b in active_bats) / len(active_bats)
-            avg_y = sum(b.y for b in active_bats) / len(active_bats)
+        if cfg.task == 2:
+            camera_x = 0
+            camera_y = 0
         else:
-            avg_x = world.w / 2
-            avg_y = world.h / 2
+            active_bats = [b for b in bats if not getattr(b, "done", False)]
+            if active_bats:
+                avg_x = sum(b.x for b in active_bats) / len(active_bats)
+                avg_y = sum(b.y for b in active_bats) / len(active_bats)
+            else:
+                avg_x = world.w / 2
+                avg_y = world.h / 2
 
-        camera_x = int(avg_x * cfg.cell_px - cfg.window_w // 3)
-        camera_y = int(avg_y * cfg.cell_px - cfg.window_h // 2)
+            if cfg.task == 2:
+                camera_x = 0
+                camera_y = 0
+            else:
+                camera_x = int(avg_x * cfg.cell_px - cfg.window_w // 3)
+                camera_y = int(avg_y * cfg.cell_px - cfg.window_h // 2)
 
-        camera_x = max(0, min(camera_x, cfg.grid_w * cfg.cell_px - cfg.window_w))
-        camera_y = max(0, min(camera_y, cfg.grid_h * cfg.cell_px - cfg.window_h))
+                camera_x = max(0, min(camera_x, cfg.grid_w * cfg.cell_px - cfg.window_w))
+                camera_y = max(0, min(camera_y, cfg.grid_h * cfg.cell_px - cfg.window_h))
 
         total_score = sum(b.score for b in bats)
         total_prey = sum(getattr(b, "prey_collected", 0) for b in bats)
         total_pred = sum(getattr(b, "predator_events", 0) for b in bats)
 
+        buzz_calls = sum(1 for b in bats if getattr(b, "last_call_type", "NONE") == "BUZZ")
+        alarm_calls = sum(1 for b in bats if getattr(b, "last_call_type", "NONE") == "ALARM")
+
         info = [
             f"Task={cfg.task}  Steps={world.step_count}/{cfg.max_steps}",
-            f"Score={total_score:.1f}  Prey={total_prey}  PredatorEvents={total_pred}",
+            f"Score={total_score:.1f}  PreyCollected={total_prey}  PredatorEvents={total_pred}",
+            f"ActivePrey={len(world.prey)}  PredatorPos={world.predator_pos}",
+            f"BuzzCalls={buzz_calls}  AlarmCalls={alarm_calls}",
             f"LLM model={cfg.llm_model}  LLM bats={cfg.n_llm_bats}  Decision period={cfg.llm_decision_period}",
             f"LLM rationale: {llm_last_rationale[:110]}",
         ]
-
         draw(screen, cfg, world, bats, font, info, camera_x, camera_y)
+        if cfg.task == 2:
+            draw_ui_panel(screen, ui_font, sliders, apply_button, panel_x, panel_y, panel_w, panel_h)
         pygame.display.flip()
 
         if record_gif and world.step_count % 2 == 0:
@@ -831,4 +1060,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
