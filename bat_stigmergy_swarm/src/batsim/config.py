@@ -34,7 +34,7 @@ class SimConfig(BaseModel):
     diffuse: float = 0.18
     buzz_deposit: float = 2.5
     alarm_deposit: float = 3.0
-
+    predator_move_period: int = 2
     # Echolocation
     ping_noise: float = 0.12
 

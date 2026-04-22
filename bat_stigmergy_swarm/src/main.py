@@ -404,6 +404,7 @@
 
 
 import sys
+from tkinter import font
 import pygame
 import random
 import os
@@ -484,7 +485,21 @@ class Slider:
         pygame.draw.circle(screen, (230, 230, 240), (knob_x, self.rect.centery), self.knob_radius)
         pygame.draw.circle(screen, (60, 60, 80), (knob_x, self.rect.centery), self.knob_radius, width=2)
 
-def draw_ui_panel(screen, ui_font, sliders, apply_button, panel_x, panel_y, panel_w, panel_h):
+# def draw_ui_panel(screen, ui_font, sliders, apply_button, panel_x, panel_y, panel_w, panel_h):
+#     panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+#     pygame.draw.rect(screen, (25, 25, 35), panel_rect, border_radius=12)
+#     pygame.draw.rect(screen, (80, 80, 100), panel_rect, width=2, border_radius=12)
+
+#     title = ui_font.render("Task Controls", True, (255, 255, 255))
+#     screen.blit(title, (panel_x + 20, panel_y + 10))
+
+#     for s in sliders:
+#         s.draw(screen, ui_font)
+
+#     apply_button.draw(screen, ui_font)
+
+
+def draw_ui_panel(screen, ui_font, sliders, apply_button, panel_x, panel_y, panel_w, panel_h, scroll_y=0):
     panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
     pygame.draw.rect(screen, (25, 25, 35), panel_rect, border_radius=12)
     pygame.draw.rect(screen, (80, 80, 100), panel_rect, width=2, border_radius=12)
@@ -492,10 +507,22 @@ def draw_ui_panel(screen, ui_font, sliders, apply_button, panel_x, panel_y, pane
     title = ui_font.render("Task Controls", True, (255, 255, 255))
     screen.blit(title, (panel_x + 20, panel_y + 10))
 
-    for s in sliders:
-        s.draw(screen, ui_font)
+    old_clip = screen.get_clip()
+    inner_rect = pygame.Rect(panel_x + 8, panel_y + 40, panel_w - 16, panel_h - 48)
+    screen.set_clip(inner_rect)
 
+    for s in sliders:
+        old_y = s.rect.y
+        s.rect.y = old_y - scroll_y
+        s.draw(screen, ui_font)
+        s.rect.y = old_y
+
+    old_btn_y = apply_button.rect.y
+    apply_button.rect.y = old_btn_y - scroll_y
     apply_button.draw(screen, ui_font)
+    apply_button.rect.y = old_btn_y
+
+    screen.set_clip(old_clip)
 
 class Button:
     def __init__(self, label, rect):
@@ -777,26 +804,46 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
         # )
 
         # predator
-        px, py = world.predator_pos
-        pcx = px * cfg.cell_px + cfg.cell_px // 2 - camera_x
-        pcy = py * cfg.cell_px + cfg.cell_px // 2 - camera_y
-        pr = max(12, cfg.predator_radius * cfg.cell_px)
 
-        # wings
-        pygame.draw.polygon(
-            screen,
-            (110, 20, 20),
-            [(pcx - pr, pcy), (pcx - pr // 3, pcy - pr // 2), (pcx - pr // 3, pcy + pr // 2)]
-        )
-        pygame.draw.polygon(
-            screen,
-            (110, 20, 20),
-            [(pcx + pr, pcy), (pcx + pr // 3, pcy - pr // 2), (pcx + pr // 3, pcy + pr // 2)]
-        )
+        for pred in getattr(world, "predators", []):
+            px, py = pred["pos"]
+            pcx = px * cfg.cell_px + cfg.cell_px // 2 - camera_x
+            pcy = py * cfg.cell_px + cfg.cell_px // 2 - camera_y
+            pr = max(12, cfg.predator_radius * cfg.cell_px)
 
-        # body
-        pygame.draw.circle(screen, (170, 30, 30), (pcx, pcy), pr // 2)
-        pygame.draw.circle(screen, (60, 10, 10), (pcx, pcy), pr // 2, width=2)
+            pygame.draw.polygon(
+                screen,
+                (110, 20, 20),
+                [(pcx - pr, pcy), (pcx - pr // 3, pcy - pr // 2), (pcx - pr // 3, pcy + pr // 2)]
+            )
+            pygame.draw.polygon(
+                screen,
+                (110, 20, 20),
+                [(pcx + pr, pcy), (pcx + pr // 3, pcy - pr // 2), (pcx + pr // 3, pcy + pr // 2)]
+            )
+
+            pygame.draw.circle(screen, (170, 30, 30), (pcx, pcy), pr // 2)
+            pygame.draw.circle(screen, (60, 10, 10), (pcx, pcy), pr // 2, width=2)
+        # px, py = world.predator_pos
+        # pcx = px * cfg.cell_px + cfg.cell_px // 2 - camera_x
+        # pcy = py * cfg.cell_px + cfg.cell_px // 2 - camera_y
+        # pr = max(12, cfg.predator_radius * cfg.cell_px)
+
+        # # wings
+        # pygame.draw.polygon(
+        #     screen,
+        #     (110, 20, 20),
+        #     [(pcx - pr, pcy), (pcx - pr // 3, pcy - pr // 2), (pcx - pr // 3, pcy + pr // 2)]
+        # )
+        # pygame.draw.polygon(
+        #     screen,
+        #     (110, 20, 20),
+        #     [(pcx + pr, pcy), (pcx + pr // 3, pcy - pr // 2), (pcx + pr // 3, pcy + pr // 2)]
+        # )
+
+        # # body
+        # pygame.draw.circle(screen, (170, 30, 30), (pcx, pcy), pr // 2)
+        # pygame.draw.circle(screen, (60, 10, 10), (pcx, pcy), pr // 2, width=2)
 
     # bats
     for b in bats:
@@ -922,34 +969,57 @@ def main():
         Slider("LLM Bats", panel_x + 20, panel_y + 95, 180, 1, 8, cfg.n_llm_bats, step=1),
         Slider("Prey", panel_x + 20, panel_y + 150, 180, 10, 200, cfg.n_prey, step=5),
         Slider("Pred Radius", panel_x + 20, panel_y + 205, 180, 2, 20, cfg.predator_radius, step=1),
+        # Slider("Predators", panel_x + 20, panel_y + 260, 180, 1, 6, getattr(cfg, "n_predators", 1), step=1),
+        Slider("Predators", panel_x + 20, panel_y + 260, 180, 1, 6, cfg.n_predators, step=1),
+        Slider("Pred Speed", panel_x + 20, panel_y + 330, 180, 1, 6, cfg.predator_move_period, step=1),
     ]
 
     apply_button = Button("Apply / Reset", (panel_x + 20, panel_y + 235, 180, 34))
     world.bats = bats
     running = True
-    
+    show_hud = True
+    show_controls = True
     llm_last_rationale = ""
 
     while running:
         clock.tick(cfg.fps)
 
         for event in pygame.event.get():
+
+            if event.type == pygame.MOUSEWHEEL and show_controls:
+                panel_scroll_y -= event.y * 30
+                panel_scroll_y = max(0, min(panel_scroll_y, 400))
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_h:
+                    show_hud = not show_hud
+                elif event.key == pygame.K_TAB:
+                    show_controls = not show_controls
+
+
             if event.type == pygame.QUIT:
                 running = False
-            for s in sliders:
-                s.handle_event(event)
+            # for s in sliders:
+            #     s.handle_event(event)
 
-            if apply_button.handle_event(event):
-                # push slider values into config
-                cfg.n_bats = int(sliders[0].value)
-                cfg.n_llm_bats = min(int(sliders[1].value), cfg.n_bats)
-                sliders[1].value = cfg.n_llm_bats  # keep UI consistent
-                cfg.n_prey = int(sliders[2].value)
-                cfg.predator_radius = int(sliders[3].value)
+            # if apply_button.handle_event(event):
 
-                # rebuild sim
-                world, bats = build_world_and_bats(cfg, client)
-                llm_last_rationale = ""
+
+            if show_controls:
+                for s in sliders:
+                    s.handle_event(event)
+
+                if apply_button.handle_event(event):
+                        
+                    # push slider values into config
+                    cfg.n_bats = int(sliders[0].value)
+                    cfg.n_llm_bats = min(int(sliders[1].value), cfg.n_bats)
+                    sliders[1].value = cfg.n_llm_bats  # keep UI consistent
+                    cfg.n_prey = int(sliders[2].value)
+                    cfg.predator_radius = int(sliders[3].value)
+                    cfg.n_predators = int(sliders[4].value)
+                    # rebuild sim
+                    world, bats = build_world_and_bats(cfg, client)
+                    llm_last_rationale = ""
 
 
         # fade out dead bats
@@ -1050,12 +1120,32 @@ def main():
                 if b.x >= outside_success_x:
                     b.done = True
                     b.score += 50.0
+            # if cfg.task == 2:
+            #     px, py = world.predator_pos
+            #     dxp = abs(b.x - px)
+            #     dyp = abs(b.y - py)
+            #     dxp = min(dxp, world.w - dxp) if cfg.task == 2 else dxp
+            #     dyp = min(dyp, world.h - dyp) if cfg.task == 2 else dyp
+
+
             if cfg.task == 2:
-                px, py = world.predator_pos
-                dxp = abs(b.x - px)
-                dyp = abs(b.y - py)
-                dxp = min(dxp, world.w - dxp) if cfg.task == 2 else dxp
-                dyp = min(dyp, world.h - dyp) if cfg.task == 2 else dyp
+                nearest_pred = None
+                nearest_d2 = 10**9
+
+                for pred in getattr(world, "predators", []):
+                    px, py = pred["pos"]
+                    dxp = abs(b.x - px)
+                    dyp = abs(b.y - py)
+                    dxp = min(dxp, world.w - dxp)
+                    dyp = min(dyp, world.h - dyp)
+                    d2 = dxp * dxp + dyp * dyp
+
+                    if d2 < nearest_d2:
+                        nearest_d2 = d2
+                        nearest_pred = (px, py, dxp, dyp)
+
+                if nearest_pred is not None:
+                    px, py, dxp, dyp = nearest_pred
 
                 # if dxp * dxp + dyp * dyp <= max(2, cfg.predator_radius // 2) ** 2:
                 #     b.alive = False
@@ -1092,7 +1182,7 @@ def main():
                         dyp2 = min(dyp2, world.h - dyp2)
 
                     # small capture radius instead of exact overlap
-                    if dxp2 * dxp2 + dyp2 * dyp2 <= 2:
+                    if dxp2 * dxp2 + dyp2 * dyp2 <= 5:
                         caught_prey = (px2, py2)
                         break
 
@@ -1240,6 +1330,10 @@ def main():
         llm_dead = llm_total - llm_alive
 
         predator_count = getattr(cfg, "n_predators", 1)
+
+        llm_bat = next((b for b in bats if isinstance(b, LLMBat)), None)
+        llm_mode = llm_bat.llm_mode if llm_bat else "N/A"
+        llm_call = llm_bat.last_call_type if llm_bat else "N/A"
         info = [
             f"Task={cfg.task}  Steps={world.step_count}/{cfg.max_steps}",
             f"Prey total={initial_prey}  eaten={prey_eaten}  left={prey_left}",
@@ -1247,15 +1341,21 @@ def main():
             f"LLM bats total={llm_total}  dead={llm_dead}  alive={llm_alive}",
             f"Predators={predator_count}",
             f"Score={total_score:.1f}  PreyCollected={total_prey}  PredatorEvents={total_pred}",
-            f"ActivePrey={len(world.prey)}  PredatorPos={world.predator_pos}",
+            f"ActivePrey={len(world.prey)}  Predators={len(getattr(world, 'predators', []))}",
             f"BuzzCalls={buzz_calls}  AlarmCalls={alarm_calls}",
             f"LLM model={cfg.llm_model}  LLM bats={cfg.n_llm_bats}  Decision period={cfg.llm_decision_period}",
             f"LLM rationale: {llm_last_rationale[:110]}",
-            f"LLM mode={next((b.llm_mode for b in bats if isinstance(b, LLMBat)), 'N/A')}",
+            # f"LLM mode={next((b.llm_mode for b in bats if isinstance(b, LLMBat)), 'N/A')}",
+            f"LLM mode={llm_mode}  LLM call={llm_call}",
         ]
-        draw(screen, cfg, world, bats, font, info, camera_x, camera_y)
+        # draw(screen, cfg, world, bats, font, info, camera_x, camera_y)
+        panel_scroll_y = 0
+        draw(screen, cfg, world, bats, font, info if show_hud else [], camera_x, camera_y)
         if cfg.task == 2:
-            draw_ui_panel(screen, ui_font, sliders, apply_button, panel_x, panel_y, panel_w, panel_h)
+            if show_controls:
+
+                # draw_ui_panel(screen, ui_font, sliders, apply_button, panel_x, panel_y, panel_w, panel_h)
+                draw_ui_panel(screen, ui_font, sliders, apply_button, panel_x, panel_y, panel_w, panel_h, panel_scroll_y)
         pygame.display.flip()
 
         if record_gif and world.step_count % 2 == 0:

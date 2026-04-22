@@ -37,8 +37,13 @@ class World:
         self.prey = set()
         self._spawn_prey()
 
-        self.predator_pos = (min(self.w - 12, self.outside_x0 + 35), self.h // 2)
-        self.predator_heading = (-1, 0)
+        # self.predator_pos = (min(self.w - 12, self.outside_x0 + 35), self.h // 2)
+        # self.predator_heading = (-1, 0)
+        self.predators = []
+        for i in range(self.cfg.n_predators):
+            px = min(self.w - 12, self.outside_x0 + 35 + i * 12)
+            py = self.h // 2 + (i % 3) * 6
+            self.predators.append({"pos": (px, py), "heading": (-1, 0)})
 
         self.sound = Soundscape(self.h, self.w, decay=cfg.decay, diffuse=cfg.diffuse)
 
@@ -201,16 +206,92 @@ class World:
                 new_prey.add((x, y))
         self.prey = new_prey
 
+    # def _move_predator(self):
+    #     if self.cfg.task != 2:
+    #         return
+
+    #     # move predator 3 substeps per world step
+    #     # if self.step_count % 2 != 0:
+    #     #     return
+        
+    #     for _ in range(1):
+    #         px, py = self.predator_pos
+    #         target = None
+
+    #         if hasattr(self, "bats"):
+    #             active = [b for b in self.bats if getattr(b, "alive", True) and not getattr(b, "done", False)]
+    #             if active:
+    #                 def torus_dist(b):
+    #                     dx = abs(b.x - px)
+    #                     dy = abs(b.y - py)
+    #                     dx = min(dx, self.w - dx)
+    #                     dy = min(dy, self.h - dy)
+    #                     return dx + dy
+
+    #                 nearest = min(active, key=torus_dist)
+    #                 if torus_dist(nearest) <= 30:
+    #                     target = nearest
+
+    #         if target is not None:
+    #             # chase using wrap-aware shortest direction
+    #             dx_raw = target.x - px
+    #             dy_raw = target.y - py
+
+    #             if abs(dx_raw) > self.w / 2:
+    #                 dx_raw = -1 if dx_raw > 0 else 1
+    #             else:
+    #                 dx_raw = 0 if dx_raw == 0 else (1 if dx_raw > 0 else -1)
+
+    #             if abs(dy_raw) > self.h / 2:
+    #                 dy_raw = -1 if dy_raw > 0 else 1
+    #             else:
+    #                 dy_raw = 0 if dy_raw == 0 else (1 if dy_raw > 0 else -1)
+
+    #             candidates = [(dx_raw, dy_raw), (dx_raw, 0), (0, dy_raw)] + DIRS
+    #         else:
+    #             candidates = [self.predator_heading] + DIRS
+
+    #         best = None
+    #         best_score = -1e9
+    #         for dx, dy in candidates:
+    #             nx, ny = self.wrap_xy(px + dx, py + dy)
+    #             if not self.is_free(nx, ny):
+    #                 continue
+
+    #             score = 0.0
+    #             if target is not None:
+    #                 ddx = abs(target.x - nx)
+    #                 ddy = abs(target.y - ny)
+    #                 ddx = min(ddx, self.w - ddx)
+    #                 ddy = min(ddy, self.h - ddy)
+    #                 score -= (ddx + ddy)
+    #             score += random.uniform(-0.05, 0.05)
+
+    #             if score > best_score:
+    #                 best_score = score
+    #                 best = (nx, ny, dx, dy)
+
+    #         if best is not None:
+    #             nx, ny, dx, dy = best
+    #             self.predator_pos = (nx, ny)
+    #             if (dx, dy) != (0, 0):
+    #                 self.predator_heading = (dx, dy)
+
+
+
+
+
+
+
     def _move_predator(self):
         if self.cfg.task != 2:
             return
+        if self.step_count % self.cfg.predator_move_period != 0:
 
-        # move predator 3 substeps per world step
-        # if self.step_count % 2 != 0:
-        #     return
-        
-        for _ in range(1):
-            px, py = self.predator_pos
+            return
+        for pred in self.predators:
+            px, py = pred["pos"]
+            predator_heading = pred["heading"]
             target = None
 
             if hasattr(self, "bats"):
@@ -224,11 +305,10 @@ class World:
                         return dx + dy
 
                     nearest = min(active, key=torus_dist)
-                    if torus_dist(nearest) <= 30:
+                    if torus_dist(nearest) <= 18:
                         target = nearest
 
             if target is not None:
-                # chase using wrap-aware shortest direction
                 dx_raw = target.x - px
                 dy_raw = target.y - py
 
@@ -244,7 +324,7 @@ class World:
 
                 candidates = [(dx_raw, dy_raw), (dx_raw, 0), (0, dy_raw)] + DIRS
             else:
-                candidates = [self.predator_heading] + DIRS
+                candidates = [predator_heading] + DIRS
 
             best = None
             best_score = -1e9
@@ -260,6 +340,7 @@ class World:
                     ddx = min(ddx, self.w - ddx)
                     ddy = min(ddy, self.h - ddy)
                     score -= (ddx + ddy)
+
                 score += random.uniform(-0.05, 0.05)
 
                 if score > best_score:
@@ -268,9 +349,14 @@ class World:
 
             if best is not None:
                 nx, ny, dx, dy = best
-                self.predator_pos = (nx, ny)
+                pred["pos"] = (nx, ny)
                 if (dx, dy) != (0, 0):
-                    self.predator_heading = (dx, dy)
+                    pred["heading"] = (dx, dy)
+
+
+
+
+
     # -------------------------
     # API
     # -------------------------
@@ -291,20 +377,36 @@ class World:
     #     dy = y - py
     #     d2 = dx * dx + dy * dy
     #     return 1.0 if d2 <= (self.cfg.predator_radius ** 2) else 0.0
+    # def predator_risk(self, x: int, y: int) -> float:
+    #     if self.cfg.task != 2:
+    #         return 0.0
+
+    #     px, py = self.predator_pos
+    #     dx = abs(x - px)
+    #     dy = abs(y - py)
+
+    #     dx = min(dx, self.w - dx)
+    #     dy = min(dy, self.h - dy)
+
+    #     d2 = dx * dx + dy * dy
+    #     return 1.0 if d2 <= (self.cfg.predator_radius ** 2) else 0.0
+
     def predator_risk(self, x: int, y: int) -> float:
         if self.cfg.task != 2:
             return 0.0
 
-        px, py = self.predator_pos
-        dx = abs(x - px)
-        dy = abs(y - py)
-
-        dx = min(dx, self.w - dx)
-        dy = min(dy, self.h - dy)
-
-        d2 = dx * dx + dy * dy
-        return 1.0 if d2 <= (self.cfg.predator_radius ** 2) else 0.0
-
+        for pred in self.predators:
+            px, py = pred["pos"]
+            dx = abs(x - px)
+            dy = abs(y - py)
+            dx = min(dx, self.w - dx)
+            dy = min(dy, self.h - dy)
+            d2 = dx * dx + dy * dy
+            if d2 <= (self.cfg.predator_radius ** 2):
+                return 1.0
+        return 0.0
+    
+    
     def step(self):
         self.step_count += 1
 
