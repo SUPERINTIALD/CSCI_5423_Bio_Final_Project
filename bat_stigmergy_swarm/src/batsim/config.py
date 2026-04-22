@@ -13,7 +13,7 @@ class SimConfig(BaseModel):
     fps: int = 30
 
     # Bats
-    n_bats: int = 100
+    n_bats: int = 1
     n_llm_bats: int = 1
     max_steps: int = 1000
 
@@ -25,10 +25,10 @@ class SimConfig(BaseModel):
     exit_width: int = 10
 
     # Task 2: prey / predator
-    n_prey: int = 20
-    predator_radius: int = 7
-    prey_reward: float = 20.0
-    predator_penalty: float = 12.0
+    n_prey: int = 50
+    predator_radius: int = 3
+    prey_reward: float = 15.0
+    predator_penalty: float = 10.0
     # Soundscape (stigmergy)
     decay: float = 0.985
     diffuse: float = 0.18

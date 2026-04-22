@@ -130,7 +130,7 @@ class World:
         self.obstacles[:, :] = 0
 
         # add sparse tree-like clutter
-        self._add_open_world_clutter(n_patches=45, patch_r_min=2, patch_r_max=4)
+        self._add_open_world_clutter(n_patches=1, patch_r_min=2, patch_r_max=4)
 
     def _add_open_world_clutter(self, n_patches=45, patch_r_min=2, patch_r_max=4):
         for _ in range(n_patches):
@@ -206,7 +206,9 @@ class World:
             return
 
         # move predator 3 substeps per world step
-        for _ in range(3):
+        if self.step_count % 2 != 0:
+            return
+        for _ in range(1):
             px, py = self.predator_pos
             target = None
 

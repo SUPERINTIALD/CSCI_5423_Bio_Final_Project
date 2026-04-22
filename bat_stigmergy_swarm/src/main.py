@@ -515,26 +515,79 @@ class Button:
         )
 
 
+# def spawn_positions_for_task(world, cfg):
+#     if cfg.task == 1:
+#         return clustered_spawn_positions(
+#             world, cfg.n_bats, center_x=8, center_y=world.h // 2, radius=3
+#         )
+
+#     # Task 2: open-world spawn
+#     positions = []
+#     used = set()
+#     tries = 0
+#     while len(positions) < cfg.n_bats and tries < 20000:
+#         tries += 1
+#         x = random.randint(5, world.w - 6)
+#         y = random.randint(3, world.h - 4)
+#         if world.is_free(x, y) and (x, y) not in used:
+#             positions.append((x, y))
+#             used.add((x, y))
+
+#     if len(positions) < cfg.n_bats:
+#         raise RuntimeError(f"Could only place {len(positions)} bats out of {cfg.n_bats} in task 2.")
+
+#     return positions
+
 def spawn_positions_for_task(world, cfg):
     if cfg.task == 1:
         return clustered_spawn_positions(
             world, cfg.n_bats, center_x=8, center_y=world.h // 2, radius=3
         )
 
-    # Task 2: open-world spawn
+    # Task 2: clumped flock spawn with no touching
     positions = []
     used = set()
     tries = 0
-    while len(positions) < cfg.n_bats and tries < 20000:
+
+    cx = world.w // 3
+    cy = world.h // 2
+
+    # put informed bat near center of flock first
+    while len(positions) < cfg.n_bats and tries < 40000:
         tries += 1
-        x = random.randint(5, world.w - 6)
-        y = random.randint(3, world.h - 4)
-        if world.is_free(x, y) and (x, y) not in used:
+
+        if len(positions) == 0:
+            x, y = cx, cy
+        else:
+            x = int(round(random.gauss(cx, 7)))
+            y = int(round(random.gauss(cy, 5)))
+
+        if cfg.task == 2:
+            x, y = world.wrap_xy(x, y)
+
+        if not world.is_free(x, y):
+            continue
+
+        # prevent touching / overlap
+        ok = True
+        for ox, oy in used:
+            dx = abs(x - ox)
+            dy = abs(y - oy)
+            if cfg.task == 2:
+                dx = min(dx, world.w - dx)
+                dy = min(dy, world.h - dy)
+            if dx <= 1 and dy <= 1:
+                ok = False
+                break
+
+        if ok:
             positions.append((x, y))
             used.add((x, y))
 
     if len(positions) < cfg.n_bats:
-        raise RuntimeError(f"Could only place {len(positions)} bats out of {cfg.n_bats} in task 2.")
+        raise RuntimeError(
+            f"Could only place {len(positions)} bats out of {cfg.n_bats} in task 2."
+        )
 
     return positions
 
@@ -742,6 +795,8 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
 
     # bats
     for b in bats:
+        if not getattr(b, "visible", True):
+            continue
         cx = b.x * cfg.cell_px + cfg.cell_px // 2 - camera_x
         cy = b.y * cfg.cell_px + cfg.cell_px // 2 - camera_y
 
@@ -753,12 +808,27 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
             for r in [10, 18, 26]:
                 pygame.draw.circle(screen, ping_color, (cx, cy), r, width=1)
 
-        color = (100, 220, 100) if getattr(b, "done", False) else (
-            (220, 70, 70) if isinstance(b, LLMBat) else (210, 210, 225)
-        )
+        # color = (100, 220, 100) if getattr(b, "done", False) else (
+        #     (220, 70, 70) if isinstance(b, LLMBat) else (210, 210, 225)
+        # )
+        if getattr(b, "dying", False):
+            fade_ratio = max(0.0, b.fade_ticks / max(1, b.fade_total))
+            color = (
+                int(180 * fade_ratio),
+                int(60 * fade_ratio),
+                int(60 * fade_ratio),
+            )
+            bat_radius = max(1, int(max(2, cfg.cell_px // 3) * fade_ratio))
+        elif getattr(b, "done", False):
+            color = (100, 220, 100)
+            bat_radius = max(2, cfg.cell_px // 3)
+        else:
+            color = (220, 70, 70) if isinstance(b, LLMBat) else (210, 210, 225)
+            bat_radius = max(2, cfg.cell_px // 3)
 
-        pygame.draw.circle(screen, color, (cx, cy), max(2, cfg.cell_px // 3))
+        # pygame.draw.circle(screen, color, (cx, cy), max(2, cfg.cell_px // 3))
 
+        pygame.draw.circle(screen, color, (cx, cy), bat_radius)
         hx, hy = getattr(b, "heading", (1, 0))
         tip_x = cx + hx * 8
         tip_y = cy + hy * 8
@@ -771,7 +841,7 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
                 radii = [14, 22]
             elif getattr(b, "last_call_type", "NONE") == "ALARM":
                 call_color = (170, 90, 255)   # alarm color (purple, non-red)
-                radii = [16, 26]
+                radii = [16, 26, 50]
             else:
                 call_color = None
                 radii = []
@@ -875,6 +945,29 @@ def main():
                 world, bats = build_world_and_bats(cfg, client)
                 llm_last_rationale = ""
 
+
+        # fade out dead bats
+        for b in bats:
+            if getattr(b, "dying", False):
+                b.fade_ticks -= 1
+                if b.fade_ticks <= 0:
+                    b.dying = False
+                    b.visible = False
+
+
+        # decay temporary prey recruitment state
+        for b in bats:
+            if getattr(b, "recruited_ticks", 0) > 0:
+                b.recruited_ticks -= 1
+
+        for b in bats:
+            if getattr(b, "follow_leader_ticks", 0) > 0:
+                b.follow_leader_ticks -= 1
+                if b.follow_leader_ticks <= 0:
+                    b.leader_mode = "NONE"
+
+
+
         if world.step_count % cfg.llm_decision_period == 0:
             for b in bats:
                 if isinstance(b, LLMBat) and not b.done:
@@ -955,12 +1048,24 @@ def main():
                 dxp = min(dxp, world.w - dxp) if cfg.task == 2 else dxp
                 dyp = min(dyp, world.h - dyp) if cfg.task == 2 else dyp
 
+                # if dxp * dxp + dyp * dyp <= max(2, cfg.predator_radius // 2) ** 2:
+                #     b.alive = False
+                #     b.done = True
+                #     b.score -= 200.0
+                #     if isinstance(b, LLMBat):
+                #         llm_last_rationale = "LLM bat died to predator."
+                #     continue
+
                 if dxp * dxp + dyp * dyp <= max(2, cfg.predator_radius // 2) ** 2:
-                    b.alive = False
-                    b.done = True
-                    b.score -= 200.0
-                    if isinstance(b, LLMBat):
-                        llm_last_rationale = "LLM bat died to predator."
+                    if b.alive:
+                        b.alive = False
+                        b.done = True
+                        b.dying = True
+                        b.fade_total = 24
+                        b.fade_ticks = b.fade_total
+                        b.score -= 120.0
+                        if isinstance(b, LLMBat):
+                            llm_last_rationale = "LLM bat died to predator."
                     continue
                 
             if cfg.task == 2:
@@ -969,12 +1074,29 @@ def main():
                     b.score -= cfg.predator_penalty
                     world.sound.deposit_alarm(b.x, b.y, cfg.alarm_deposit)
 
-                if (b.x, b.y) in world.prey:
-                    world.prey.remove((b.x, b.y))
+                caught_prey = None
+                for px2, py2 in list(world.prey):
+                    dxp2 = abs(b.x - px2)
+                    dyp2 = abs(b.y - py2)
+                    if cfg.task == 2:
+                        dxp2 = min(dxp2, world.w - dxp2)
+                        dyp2 = min(dyp2, world.h - dyp2)
+
+                    # small capture radius instead of exact overlap
+                    if dxp2 * dxp2 + dyp2 * dyp2 <= 2:
+                        caught_prey = (px2, py2)
+                        break
+
+                if caught_prey is not None:
+                    world.prey.remove(caught_prey)
                     b.prey_collected += 1
                     b.score += cfg.prey_reward
                     b.hungry = False
                     world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit)
+                    b.recruited_ticks = 0
+                    b.follow_leader_ticks = 0
+                    b.leader_mode = "NONE"
+
             if cfg.task == 2 and world.step_count % 10 == 0:
                 # print("Predator:", world.predator_pos)
                 # for i, b in enumerate(bats[:5]):
@@ -985,14 +1107,78 @@ def main():
                 #     world.sound.deposit_alarm(b.x, b.y, cfg.alarm_deposit * 0.5)
 
 
+                # if call == "BUZZ":
+                #     world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit * 0.75)
+                #     b.last_call_step = world.step_count
+                #     b.last_call_type = "BUZZ"
+                # elif call == "ALARM":
+                #     world.sound.deposit_alarm(b.x, b.y, cfg.alarm_deposit * 0.75)
+                #     b.last_call_step = world.step_count
+                #     b.last_call_type = "ALARM"
+                # else:
+                #     b.last_call_type = "NONE"
+
                 if call == "BUZZ":
                     world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit * 0.75)
                     b.last_call_step = world.step_count
                     b.last_call_type = "BUZZ"
+
+                    # informed leader recruits nearby hungry bats
+                    if isinstance(b, LLMBat):
+                        for other in bats:
+                            if other is b or getattr(other, "done", False) or not getattr(other, "alive", True):
+                                continue
+                            if not getattr(other, "hungry", True):
+                                continue
+
+                            dxh = abs(other.x - b.x)
+                            dyh = abs(other.y - b.y)
+                            if cfg.task == 2:
+                                dxh = min(dxh, world.w - dxh)
+                                dyh = min(dyh, world.h - dyh)
+
+                            if dxh + dyh <= 14:
+                                other.follow_leader_ticks = 30
+                                other.leader_mode = "BUZZ"
+                                other.recruited_ticks = 20
+
                 elif call == "ALARM":
-                    world.sound.deposit_alarm(b.x, b.y, cfg.alarm_deposit * 0.75)
+                    world.sound.deposit_alarm(b.x, b.y, cfg.alarm_deposit * 1.0)
                     b.last_call_step = world.step_count
                     b.last_call_type = "ALARM"
+
+                    # informed leader recruits nearby bats into coordinated escape
+                    if isinstance(b, LLMBat):
+                        for other in bats:
+                            if other is b or getattr(other, "done", False) or not getattr(other, "alive", True):
+                                continue
+
+                            dxh = abs(other.x - b.x)
+                            dyh = abs(other.y - b.y)
+                            if cfg.task == 2:
+                                dxh = min(dxh, world.w - dxh)
+                                dyh = min(dyh, world.h - dyh)
+
+                            if dxh + dyh <= 16:
+                                other.follow_leader_ticks = 24
+                                other.leader_mode = "ALARM"
+                                other.recruited_ticks = 0
+
+                    # informed leader recruits nearby bats into coordinated escape
+                    if isinstance(b, LLMBat):
+                        for other in bats:
+                            if other is b or getattr(other, "done", False) or not getattr(other, "alive", True):
+                                continue
+
+                            dxh = abs(other.x - b.x)
+                            dyh = abs(other.y - b.y)
+                            if cfg.task == 2:
+                                dxh = min(dxh, world.w - dxh)
+                                dyh = min(dyh, world.h - dyh)
+
+                            if dxh + dyh <= 16:
+                                other.follow_leader_ticks = 24
+                                other.leader_mode = "ALARM"
                 else:
                     b.last_call_type = "NONE"
         world.step()
