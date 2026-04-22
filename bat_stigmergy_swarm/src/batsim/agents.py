@@ -237,6 +237,7 @@ class Bat:
     fade_total: int = 24
     visible: bool = True
     recruited_ticks: int = 0
+    llm_mode: str = "EXPLORE"
     # def ping(self, world: World, cfg: SimConfig, max_d: int = 10):
     #     """
     #     Simple bat-like echolocation abstraction:
@@ -676,6 +677,7 @@ class RuleBasedBat(Bat):
         # predator_close = cfg.task == 2 and torus_dist(bx, by, px, py) <= (cfg.predator_radius + 6)
         px, py = world.predator_pos if cfg.task == 2 else (-999, -999)
         current_predator_close = cfg.task == 2 and torus_dist(bx, by, px, py) <= (cfg.predator_radius + 14)
+        candidate_predator_close = False
         for dx, dy in DIRS:
             if cfg.task == 2:
                 nx, ny = world.wrap_xy(bx + dx, by + dy)
@@ -686,6 +688,16 @@ class RuleBasedBat(Bat):
                 continue
 
             val = 0.0
+            # short-range separation: don't stack bats on top of each other
+            if hasattr(world, "bat_positions"):
+                for ox, oy in world.bat_positions:
+                    if (ox, oy) == (bx, by):
+                        continue
+                    dsep = torus_dist(nx, ny, ox, oy) if cfg.task == 2 else (abs(nx - ox) + abs(ny - oy))
+                    if dsep <= 1:
+                        val -= 6.0
+                    elif dsep == 2:
+                        val -= 2.0
 
             # ---------------- TASK 1 ----------------
             if cfg.task == 1:
@@ -1149,21 +1161,52 @@ class LLMBat(Bat):
 
 
 
+            # system = (
+            #     "You are controlling one informed bat in a 2D outside environment.\n"
+            #     "Task 2: lead the group to prey and away from predator danger.\n"
+            #     "The world wraps immediately left-right and top-bottom like a torus.\n"
+            #     "You are a LEADER: nearby bats may follow your BUZZ or ALARM calls.\n"
+            #     "Use legal moves, ping, local patch, prey/predator vectors, and soundscape.\n"
+            #     "Rules:\n"
+            #     "- If predator_dist is small or predator_vec is present and close, use CALL: ALARM.\n"
+            #     "- If prey is nearby and you are guiding bats to food, use CALL: BUZZ.\n"
+            #     "- Otherwise use CALL: NONE.\n"
+            #     "- CALL must be exactly one of: NONE, BUZZ, ALARM.\n"
+            #     "- ACTION must be exactly one of: N, NE, E, SE, S, SW, W, NW, STAY.\n"
+            #     "- Never output any other call token.\n"
+            #     "Return EXACTLY these lines:\n"
+            #     "ACTION: <N|NE|E|SE|S|SW|W|NW|STAY>\n"
+            #     "CALL: <NONE|BUZZ|ALARM>\n"
+            #     "RATIONALE: <one short sentence>\n"
+            # )
+            # user = (
+            #     f"position={obs['position']}\n"
+            #     f"legal_moves={obs['legal_moves']}\n"
+            #     f"clearance={obs['clearance']}\n"
+            #     f"ping={obs['ping']}\n"
+            #     f"local_buzz={obs['local_buzz']:.3f}\n"
+            #     f"local_alarm={obs['local_alarm']:.3f}\n"
+            #     f"nearest_prey_vec={obs['nearest_prey_vec']}\n"
+            #     f"nearest_prey_dist={obs['nearest_prey_dist']}\n"
+            #     f"nearby_prey_count={obs['nearby_prey_count']}\n"
+            #     f"predator_vec={obs['predator_vec']}\n"
+            #     f"predator_dist={obs['predator_dist']}\n"
+            #     f"predator_pos={obs['predator_pos']}\n"
+            #     f"local_patch=\n{obs['local_patch']}\n"
+            # )
             system = (
                 "You are controlling one informed bat in a 2D outside environment.\n"
-                "Task 2: lead the group to prey and away from predator danger.\n"
-                "The world wraps immediately left-right and top-bottom like a torus.\n"
-                "You are a LEADER: nearby bats may follow your BUZZ or ALARM calls.\n"
-                "Use legal moves, ping, local patch, prey/predator vectors, and soundscape.\n"
-                "Rules:\n"
-                "- If predator_dist is small or predator_vec is present and close, use CALL: ALARM.\n"
-                "- If prey is nearby and you are guiding bats to food, use CALL: BUZZ.\n"
-                "- Otherwise use CALL: NONE.\n"
-                "- CALL must be exactly one of: NONE, BUZZ, ALARM.\n"
-                "- ACTION must be exactly one of: N, NE, E, SE, S, SW, W, NW, STAY.\n"
-                "- Never output any other call token.\n"
+                "Your job is to choose the bat's HIGH-LEVEL MODE, not the exact movement.\n"
+                "Main goal: move toward prey.\n"
+                "If predator is close, choose FLEE.\n"
+                "If prey exists and predator is not close, choose FORAGE.\n"
+                "If no strong cue exists, choose EXPLORE.\n"
+                "You may also choose a call:\n"
+                "- ALARM when predator is close\n"
+                "- BUZZ when guiding bats to prey\n"
+                "- NONE otherwise\n"
                 "Return EXACTLY these lines:\n"
-                "ACTION: <N|NE|E|SE|S|SW|W|NW|STAY>\n"
+                "MODE: <FORAGE|FLEE|EXPLORE>\n"
                 "CALL: <NONE|BUZZ|ALARM>\n"
                 "RATIONALE: <one short sentence>\n"
             )
@@ -1188,15 +1231,41 @@ class LLMBat(Bat):
             {"role": "user", "content": user},
         ]
 
+    # def _parse(self, text: str, task: int):
+    #     move = "STAY"
+    #     call = "NONE"
+    #     rationale = ""
+
+    #     for line in text.splitlines():
+    #         s = line.strip()
+    #         if s.upper().startswith("ACTION:"):
+    #             move = s.split(":", 1)[1].strip().upper().replace("MOVE", "").strip()
+    #         elif s.upper().startswith("CALL:"):
+    #             call = s.split(":", 1)[1].strip().upper()
+    #         elif s.upper().startswith("RATIONALE:"):
+    #             rationale = s.split(":", 1)[1].strip()
+
+    #     if move not in NAME_TO_DIR:
+    #         move = "STAY"
+
+    #     if task == 1:
+    #         call = "NONE"
+    #     elif call not in {"NONE", "BUZZ", "ALARM"}:
+    #         call = "NONE"
+
+    #     return NAME_TO_DIR[move], call, rationale
     def _parse(self, text: str, task: int):
         move = "STAY"
+        mode = "EXPLORE"
         call = "NONE"
         rationale = ""
 
         for line in text.splitlines():
             s = line.strip()
-            if s.upper().startswith("ACTION:"):
+            if task == 1 and s.upper().startswith("ACTION:"):
                 move = s.split(":", 1)[1].strip().upper().replace("MOVE", "").strip()
+            elif task == 2 and s.upper().startswith("MODE:"):
+                mode = s.split(":", 1)[1].strip().upper()
             elif s.upper().startswith("CALL:"):
                 call = s.split(":", 1)[1].strip().upper()
             elif s.upper().startswith("RATIONALE:"):
@@ -1204,14 +1273,12 @@ class LLMBat(Bat):
 
         if move not in NAME_TO_DIR:
             move = "STAY"
-
-        if task == 1:
+        if mode not in {"FORAGE", "FLEE", "EXPLORE"}:
+            mode = "EXPLORE"
+        if call not in {"NONE", "BUZZ", "ALARM"}:
             call = "NONE"
-        elif call not in {"NONE", "BUZZ", "ALARM"}:
-            call = "NONE"
 
-        return NAME_TO_DIR[move], call, rationale
-
+        return NAME_TO_DIR[move], mode, call, rationale
     def query_llm(self, world: World, cfg: SimConfig):
         if self.done:
             self.last_action, self.last_call, self.last_rationale = (0, 0), "NONE", "done"
@@ -1252,104 +1319,201 @@ class LLMBat(Bat):
         msgs = self._build_prompt(obs)
         out = self.client.chat(msgs, max_tokens=80)
         print("LLM RAW OUTPUT:\n", out)
+        if cfg.task == 1:
+            action, _, call, rationale = self._parse(out, cfg.task)
 
+            if action == (0, 0):
+                self.stay_streak += 1
+            else:
+                self.stay_streak = 0
+
+            if self.stay_streak >= 3:
+                action = (1, 0)
+                call = "NONE"
+                rationale = "Fallback move toward exit after repeated STAY."
+                self.stay_streak = 0
+
+            self.last_action = self.smooth_move(action, world)
+            self.last_call = call
+            self.last_rationale = rationale
+            self.llm_mode = "EXPLORE"
+            return
+
+        # -----------------------------
+        # Task 2: mode-based control
+        # -----------------------------
+        _, mode, call, rationale = self._parse(out, cfg.task)
+        entity = self.entity_cues(world, radius=18)
+
+        predator_dist = entity["predator_dist"]
+        predator_vec = entity["predator_vec"]
+        prey_dist = entity["nearest_prey_dist"]
+        prey_vec = entity["nearest_prey_vec"]
+
+        # hard override mode
+        if predator_dist is not None and predator_dist <= (cfg.predator_radius + 8):
+            mode = "FLEE"
+        elif prey_vec is not None:
+            mode = "FORAGE"
+        else:
+            mode = "EXPLORE"
+
+        # hard override call
+        if predator_dist is not None and predator_dist <= (cfg.predator_radius + 8):
+            call = "ALARM"
+        elif self.hungry and prey_dist is not None and prey_dist <= 30:
+            call = "BUZZ"
+        else:
+            call = "NONE"
+
+        # convert mode -> action
+        action = (0, 0)
+
+        if mode == "FLEE" and predator_vec is not None:
+            pvx, pvy = predator_vec
+            move_dx = 0 if pvx == 0 else (-1 if pvx > 0 else 1)
+            move_dy = 0 if pvy == 0 else (-1 if pvy > 0 else 1)
+            action = (move_dx, move_dy)
+
+        elif mode == "FORAGE" and prey_vec is not None:
+            pvx, pvy = prey_vec
+            move_dx = 0 if pvx == 0 else (1 if pvx > 0 else -1)
+            move_dy = 0 if pvy == 0 else (1 if pvy > 0 else -1)
+            action = (move_dx, move_dy)
+
+        else:
+            # exploration
+            explore_choices = [
+                (1, 0), (1, -1), (0, -1), (-1, -1),
+                (-1, 0), (-1, 1), (0, 1), (1, 1)
+            ]
+            if self.heading in explore_choices:
+                explore_choices.remove(self.heading)
+                explore_choices.append(self.heading)
+
+            for cand in explore_choices:
+                tx, ty = world.wrap_xy(self.x + cand[0], self.y + cand[1]) if cfg.task == 2 else (self.x + cand[0], self.y + cand[1])
+                if world.is_free(tx, ty):
+                    action = cand
+                    break
+
+        action = self.smooth_move(action, world)
+
+        if action == (0, 0):
+            self.stay_streak += 1
+        else:
+            self.stay_streak = 0
+
+        self.last_action = action
+        self.last_call = call
+        self.last_rationale = rationale
+        self.llm_mode = mode
+
+        print(
+            f"LLM DECISION | pos={(self.x, self.y)} | mode={mode} | "
+            f"predator_dist={predator_dist} | prey_dist={prey_dist} | "
+            f"call={call} | action={action}"
+        )
         # action, call, rationale = self._parse(out)
         # action, call, rationale = self._parse(out, cfg.task)
         # if action == (0, 0):
         #     self.stay_streak += 1
         # else:
         #     self.stay_streak = 0
-        action, call, rationale = self._parse(out, cfg.task)
+        # action, call, rationale = self._parse(out, cfg.task)
 
-        # -----------------------------
-        # hard call override for Task 2
-        # -----------------------------
-        if cfg.task == 2:
-            entity = self.entity_cues(world, radius=18)
 
-            predator_dist = entity["predator_dist"]
-            prey_dist = entity["nearest_prey_dist"]
-            prey_count = entity["nearby_prey_count"]
 
-            # force alarm if predator is genuinely close
-            if predator_dist is not None and predator_dist <= (cfg.predator_radius + 7):
-                call = "ALARM"
 
-            # otherwise buzz if prey is nearby and bat is still hungry
-            elif self.hungry and prey_dist is not None and prey_dist <= 30:
-                call = "BUZZ"
+        # # -----------------------------
+        # # hard call override for Task 2
+        # # -----------------------------
+        # if cfg.task == 2:
+        #     entity = self.entity_cues(world, radius=18)
 
-            # otherwise none
-            else:
-                call = "NONE"
+        #     predator_dist = entity["predator_dist"]
+        #     prey_dist = entity["nearest_prey_dist"]
+        #     prey_count = entity["nearby_prey_count"]
 
-        # smooth movement after parse
-        # if predator is close, bias movement away from predator before smoothing
-        # if predator is close, bias movement away from predator before smoothing
-        if cfg.task == 2 and entity["predator_vec"] is not None and entity["predator_dist"] is not None:
-            if entity["predator_dist"] <= (cfg.predator_radius + 4):
-                pvx, pvy = entity["predator_vec"]
-                away_dx = 0 if pvx == 0 else (-1 if pvx > 0 else 1)
-                away_dy = 0 if pvy == 0 else (-1 if pvy > 0 else 1)
-                forced_escape = (away_dx, away_dy)
+        #     # force alarm if predator is genuinely close
+        #     if predator_dist is not None and predator_dist <= (cfg.predator_radius + 7):
+        #         call = "ALARM"
 
-                tx, ty = world.wrap_xy(self.x + forced_escape[0], self.y + forced_escape[1]) if cfg.task == 2 else (self.x + forced_escape[0], self.y + forced_escape[1])
-                if world.is_free(tx, ty):
-                    action = forced_escape
+        #     # otherwise buzz if prey is nearby and bat is still hungry
+        #     elif self.hungry and prey_dist is not None and prey_dist <= 30:
+        #         call = "BUZZ"
 
-        # otherwise, if prey is close and safe, bias toward prey
-        elif cfg.task == 2 and entity["nearest_prey_vec"] is not None and entity["nearest_prey_dist"] is not None:
-            if entity["nearest_prey_dist"] <= 60:
-                pvx, pvy = entity["nearest_prey_vec"]
-                prey_dx = 0 if pvx == 0 else (1 if pvx > 0 else -1)
-                prey_dy = 0 if pvy == 0 else (1 if pvy > 0 else -1)
-                forced_prey = (prey_dx, prey_dy)
+        #     # otherwise none
+        #     else:
+        #         call = "NONE"
 
-                tx, ty = world.wrap_xy(self.x + forced_prey[0], self.y + forced_prey[1]) if cfg.task == 2 else (self.x + forced_prey[0], self.y + forced_prey[1])
-                if world.is_free(tx, ty):
-                    action = forced_prey
+        # # smooth movement after parse
+        # # if predator is close, bias movement away from predator before smoothing
+        # # if predator is close, bias movement away from predator before smoothing
+        # if cfg.task == 2 and entity["predator_vec"] is not None and entity["predator_dist"] is not None:
+        #     if entity["predator_dist"] <= (cfg.predator_radius + 4):
+        #         pvx, pvy = entity["predator_vec"]
+        #         away_dx = 0 if pvx == 0 else (-1 if pvx > 0 else 1)
+        #         away_dy = 0 if pvy == 0 else (-1 if pvy > 0 else 1)
+        #         forced_escape = (away_dx, away_dy)
 
-        action = self.smooth_move(action, world)
-        # exploration mode: if prey is far and predator is not close, don't keep marching in one direction forever
-        if cfg.task == 2:
-            far_from_prey = entity["nearest_prey_dist"] is None or entity["nearest_prey_dist"] > 60
-            safe_from_pred = entity["predator_dist"] is None or entity["predator_dist"] > (cfg.predator_radius + 8)
+        #         tx, ty = world.wrap_xy(self.x + forced_escape[0], self.y + forced_escape[1]) if cfg.task == 2 else (self.x + forced_escape[0], self.y + forced_escape[1])
+        #         if world.is_free(tx, ty):
+        #             action = forced_escape
 
-            if far_from_prey and safe_from_pred:
-                explore_choices = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]
-                random.shuffle(explore_choices)
-                for cand in explore_choices:
-                    tx, ty = world.wrap_xy(self.x + cand[0], self.y + cand[1]) if cfg.task == 2 else (self.x + cand[0], self.y + cand[1])
-                    if world.is_free(tx, ty):
-                        action = cand
-                        break
-        if action == (0, 0):
-            self.stay_streak += 1
-        else:
-            self.stay_streak = 0
+        # # otherwise, if prey is close and safe, bias toward prey
+        # elif cfg.task == 2 and entity["nearest_prey_vec"] is not None and entity["nearest_prey_dist"] is not None:
+        #     if entity["nearest_prey_dist"] <= 60:
+        #         pvx, pvy = entity["nearest_prey_vec"]
+        #         prey_dx = 0 if pvx == 0 else (1 if pvx > 0 else -1)
+        #         prey_dy = 0 if pvy == 0 else (1 if pvy > 0 else -1)
+        #         forced_prey = (prey_dx, prey_dy)
 
-        # fallback so it does not freeze forever
-        if cfg.task == 1 and self.stay_streak >= 3:
-            action = (1, 0)  # move east
-            call = "NONE"
-            rationale = "Fallback move toward exit after repeated STAY."
-            self.stay_streak = 0
-
+        #         tx, ty = world.wrap_xy(self.x + forced_prey[0], self.y + forced_prey[1]) if cfg.task == 2 else (self.x + forced_prey[0], self.y + forced_prey[1])
+        #         if world.is_free(tx, ty):
+        #             action = forced_prey
 
         # action = self.smooth_move(action, world)
+        # # exploration mode: if prey is far and predator is not close, don't keep marching in one direction forever
+        # if cfg.task == 2:
+        #     far_from_prey = entity["nearest_prey_dist"] is None or entity["nearest_prey_dist"] > 60
+        #     safe_from_pred = entity["predator_dist"] is None or entity["predator_dist"] > (cfg.predator_radius + 8)
+
+        #     if far_from_prey and safe_from_pred:
+        #         explore_choices = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]
+        #         random.shuffle(explore_choices)
+        #         for cand in explore_choices:
+        #             tx, ty = world.wrap_xy(self.x + cand[0], self.y + cand[1]) if cfg.task == 2 else (self.x + cand[0], self.y + cand[1])
+        #             if world.is_free(tx, ty):
+        #                 action = cand
+        #                 break
+        # if action == (0, 0):
+        #     self.stay_streak += 1
+        # else:
+        #     self.stay_streak = 0
+
+        # # fallback so it does not freeze forever
+        # if cfg.task == 1 and self.stay_streak >= 3:
+        #     action = (1, 0)  # move east
+        #     call = "NONE"
+        #     rationale = "Fallback move toward exit after repeated STAY."
+        #     self.stay_streak = 0
 
 
-        self.last_action = action
-        self.last_call = call
-        self.last_rationale = rationale
+        # # action = self.smooth_move(action, world)
 
-        if cfg.task == 2:
-            print(
-                f"LLM DECISION | pos={(self.x, self.y)} | "
-                f"predator_dist={entity['predator_dist']} | "
-                f"prey_dist={entity['nearest_prey_dist']} | "
-                f"call={call} | action={action}"
-            )
+
+        # self.last_action = action
+        # self.last_call = call
+        # self.last_rationale = rationale
+
+        # if cfg.task == 2:
+        #     print(
+        #         f"LLM DECISION | pos={(self.x, self.y)} | "
+        #         f"predator_dist={entity['predator_dist']} | "
+        #         f"prey_dist={entity['nearest_prey_dist']} | "
+        #         f"call={call} | action={action}"
+        #     )
 
     def act(self, world: World, cfg: SimConfig):
         if self.done:

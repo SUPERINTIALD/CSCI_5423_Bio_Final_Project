@@ -682,6 +682,11 @@ def choose_resolved_move(world, bat, preferred, reserved_next):
             continue
 
         score = 0.0
+        if (mdx, mdy) == preferred:
+            score += 2.0
+
+        if isinstance(bat, LLMBat) and (mdx, mdy) == preferred:
+            score += 4.0
 
         if (mdx, mdy) != (0, 0):
             score += 0.2
@@ -922,6 +927,7 @@ def main():
     apply_button = Button("Apply / Reset", (panel_x + 20, panel_y + 235, 180, 34))
     world.bats = bats
     running = True
+    
     llm_last_rationale = ""
 
     while running:
@@ -1015,7 +1021,10 @@ def main():
 
             old_x, old_y = b.x, b.y
             chosen_x, chosen_y = choose_resolved_move(world, b, (dx, dy), reserved_next)
-
+            applied_dx = chosen_x - old_x
+            applied_dy = chosen_y - old_y
+            if isinstance(b, LLMBat):
+                print(f"LLM wanted {(dx, dy)} but applied {(applied_dx, applied_dy)}")
             b.x, b.y = chosen_x, chosen_y
             reserved_next.add((b.x, b.y))
 
@@ -1217,14 +1226,32 @@ def main():
 
         buzz_calls = sum(1 for b in bats if getattr(b, "last_call_type", "NONE") == "BUZZ")
         alarm_calls = sum(1 for b in bats if getattr(b, "last_call_type", "NONE") == "ALARM")
+        initial_prey = cfg.n_prey
+        prey_left = len(world.prey)
+        prey_eaten = initial_prey - prey_left
 
+        total_bats = len(bats)
+        alive_bats = sum(1 for b in bats if getattr(b, "alive", True))
+        dead_bats = total_bats - alive_bats
+
+        llm_bats = [b for b in bats if isinstance(b, LLMBat)]
+        llm_total = len(llm_bats)
+        llm_alive = sum(1 for b in llm_bats if getattr(b, "alive", True))
+        llm_dead = llm_total - llm_alive
+
+        predator_count = getattr(cfg, "n_predators", 1)
         info = [
             f"Task={cfg.task}  Steps={world.step_count}/{cfg.max_steps}",
+            f"Prey total={initial_prey}  eaten={prey_eaten}  left={prey_left}",
+            f"Bats total={total_bats}  dead={dead_bats}  alive={alive_bats}",
+            f"LLM bats total={llm_total}  dead={llm_dead}  alive={llm_alive}",
+            f"Predators={predator_count}",
             f"Score={total_score:.1f}  PreyCollected={total_prey}  PredatorEvents={total_pred}",
             f"ActivePrey={len(world.prey)}  PredatorPos={world.predator_pos}",
             f"BuzzCalls={buzz_calls}  AlarmCalls={alarm_calls}",
             f"LLM model={cfg.llm_model}  LLM bats={cfg.n_llm_bats}  Decision period={cfg.llm_decision_period}",
             f"LLM rationale: {llm_last_rationale[:110]}",
+            f"LLM mode={next((b.llm_mode for b in bats if isinstance(b, LLMBat)), 'N/A')}",
         ]
         draw(screen, cfg, world, bats, font, info, camera_x, camera_y)
         if cfg.task == 2:

@@ -5,7 +5,7 @@ class SimConfig(BaseModel):
     # World size (in grid cells)
     grid_w: int = 220
     grid_h: int = 110
-
+    n_predators: int = 1
     # Display window size (camera shows only part of world)
     window_w: int = 1400
     window_h: int = 900
@@ -13,7 +13,7 @@ class SimConfig(BaseModel):
     fps: int = 30
 
     # Bats
-    n_bats: int = 1
+    n_bats: int = 15
     n_llm_bats: int = 1
     max_steps: int = 1000
 
