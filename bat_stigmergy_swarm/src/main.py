@@ -887,20 +887,51 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
         pygame.draw.line(screen, (255, 255, 255), (cx, cy), (tip_x, tip_y), 2)
         
         # show recent social calls in Task 2
-        if cfg.task == 2 and world.step_count - getattr(b, "last_call_step", -999) <= 6:
-            if getattr(b, "last_call_type", "NONE") == "BUZZ":
-                call_color = (255, 230, 90)   # bright yellow
-                radii = [14, 22]
-            elif getattr(b, "last_call_type", "NONE") == "ALARM":
-                call_color = (170, 90, 255)   # alarm color (purple, non-red)
-                radii = [16, 26, 50]
+
+        # show recent social calls in Task 2
+        if cfg.task == 2 and world.step_count - getattr(b, "last_call_step", -999) <= 8:
+            call_type = getattr(b, "last_call_type", "NONE")
+
+            if isinstance(b, LLMBat):
+                # LLM-specific palette
+                if call_type == "BUZZ":
+                    call_color = (255, 170, 60)   # orange-gold for LLM buzz
+                    radii = [16, 26, 36]
+                elif call_type == "ALARM":
+                    call_color = (120, 220, 255)  # cyan-blue for LLM alarm
+                    radii = [18, 30, 42]
+                else:
+                    call_color = None
+                    radii = []
             else:
-                call_color = None
-                radii = []
+                # Rule-based palette
+                if call_type == "BUZZ":
+                    call_color = (255, 230, 90)   # yellow
+                    radii = [14, 22]
+                elif call_type == "ALARM":
+                    call_color = (170, 90, 255)   # purple
+                    radii = [16, 26, 36]
+                else:
+                    call_color = None
+                    radii = []
 
             if call_color is not None:
                 for r in radii:
-                    pygame.draw.circle(screen, call_color, (cx, cy), r, width=2)    
+                    pygame.draw.circle(screen, call_color, (cx, cy), r, width=2)
+        # if cfg.task == 2 and world.step_count - getattr(b, "last_call_step", -999) <= 6:
+        #     if getattr(b, "last_call_type", "NONE") == "BUZZ":
+        #         call_color = (255, 230, 90)   # bright yellow
+        #         radii = [14, 22]
+        #     elif getattr(b, "last_call_type", "NONE") == "ALARM":
+        #         call_color = (170, 90, 255)   # alarm color (purple, non-red)
+        #         radii = [16, 26, 50]
+        #     else:
+        #         call_color = None
+        #         radii = []
+
+        #     if call_color is not None:
+        #         for r in radii:
+        #             pygame.draw.circle(screen, call_color, (cx, cy), r, width=2)    
     y0 = 8
     for line in info_lines:
         surf = font.render(line, True, (235, 235, 235))
@@ -1093,8 +1124,11 @@ def main():
             chosen_x, chosen_y = choose_resolved_move(world, b, (dx, dy), reserved_next)
             applied_dx = chosen_x - old_x
             applied_dy = chosen_y - old_y
-            if isinstance(b, LLMBat):
-                print(f"LLM wanted {(dx, dy)} but applied {(applied_dx, applied_dy)}")
+            
+            
+            
+            # if isinstance(b, LLMBat):
+                # print(f"LLM wanted {(dx, dy)} but applied {(applied_dx, applied_dy)}")
             b.x, b.y = chosen_x, chosen_y
             reserved_next.add((b.x, b.y))
 
@@ -1198,8 +1232,8 @@ def main():
 
             if cfg.task == 2 and world.step_count % 10 == 0:
                 # print("Predator:", world.predator_pos)
-                # for i, b in enumerate(bats[:5]):
-                    # print(f"Bat {i}: {(b.x, b.y)}")
+                for i, b in enumerate(bats[:5]):
+                    print(f"Bat {i}: {(b.x, b.y)}")
                 # if call == "BUZZ":
                 #     world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit * 0.5)
                 # elif call == "ALARM":

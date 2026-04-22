@@ -238,6 +238,7 @@ class Bat:
     visible: bool = True
     recruited_ticks: int = 0
     llm_mode: str = "EXPLORE"
+    recent_positions: list = None
     # def ping(self, world: World, cfg: SimConfig, max_d: int = 10):
     #     """
     #     Simple bat-like echolocation abstraction:
@@ -667,6 +668,8 @@ class Bat:
 
 class RuleBasedBat(Bat):
     def act(self, world: World, cfg: SimConfig):
+        if self.recent_positions is None:
+            self.recent_positions = []
         if self.done or not self.alive:
             return (0, 0), "NONE", "done"
 
@@ -705,10 +708,19 @@ class RuleBasedBat(Bat):
 
         current_predator_close = cfg.task == 2 and torus_dist(bx, by, px, py) <= (cfg.predator_radius + 8)
 
-        group_center = None
-        if hasattr(world, "bat_positions") and world.bat_positions:
-            xs, ys = zip(*world.bat_positions)
-            group_center = (sum(xs) / len(xs), sum(ys) / len(ys))
+        # group_center = None
+        # if hasattr(world, "bat_positions") and world.bat_positions:
+        #     xs, ys = zip(*world.bat_positions)
+        #     group_center = (sum(xs) / len(xs), sum(ys) / len(ys))
+
+        local_neighbors = []
+        if hasattr(world, "bat_positions"):
+            for ox, oy in world.bat_positions:
+                if (ox, oy) == (bx, by):
+                    continue
+                dloc = torus_dist(bx, by, ox, oy) if cfg.task == 2 else (abs(bx - ox) + abs(by - oy))
+                if dloc <= 12:
+                    local_neighbors.append((ox, oy))
 
         for dx, dy in DIRS:
             if cfg.task == 2:
@@ -720,7 +732,8 @@ class RuleBasedBat(Bat):
                 continue
 
             val = 0.0
-
+            if self.recent_positions is not None and (nx, ny) in self.recent_positions:
+                val -= 3.0
             # short-range separation
             if hasattr(world, "bat_positions"):
                 for ox, oy in world.bat_positions:
@@ -815,7 +828,23 @@ class RuleBasedBat(Bat):
                     val += 2.5
 
                 val -= float(world.sound.alarm[ny, nx]) * 3.0
+                # jam recovery near obstacles: prioritize escaping local traps
+                if jammed:
+                    clearance_score = 0
+                    for sx, sy in [(1,0), (1,-1), (1,1), (0,-1), (0,1), (-1,0), (-1,-1), (-1,1)]:
+                        tx, ty = nx, ny
+                        d = 0
+                        for _ in range(5):
+                            tx, ty = world.wrap_xy(tx + sx, ty + sy) if cfg.task == 2 else (tx + sx, ty + sy)
+                            if not world.is_free(tx, ty):
+                                break
+                            d += 1
+                        clearance_score += d
 
+                    val += 0.35 * clearance_score
+
+                    # temporarily weaken over-clumping when jammed
+                    val += 0.25 if (dx, dy) != (0, 0) else -0.6
                 # flock cohesion
                 group_neighbors = []
                 if hasattr(world, "bat_positions"):
@@ -832,9 +861,9 @@ class RuleBasedBat(Bat):
                     mean_new = sum(d1 for _, d1 in group_neighbors) / len(group_neighbors)
 
                     if mean_new < mean_old:
-                        val += 2.0
+                        val += 0.8
                     if mean_new > 10:
-                        val -= 3.0
+                        val -= 1.5
                     if candidate_predator_close and mean_new <= mean_old + 1.0:
                         val += 2.5
 
@@ -845,9 +874,9 @@ class RuleBasedBat(Bat):
                     new_ld = torus_dist(nx, ny, lx, ly)
 
                     if new_ld < old_ld:
-                        val += 2.2
+                        val += 1.0
                     if old_ld <= 20 and new_ld < old_ld:
-                        val += 1.2
+                        val += 0.6
 
                     if self.follow_leader_ticks > 0 and self.leader_mode == "ALARM":
                         if new_ld < old_ld and new_pd > old_pd:
@@ -860,13 +889,55 @@ class RuleBasedBat(Bat):
                         val -= 2.0
 
                 # fallback if LLM gone
-                if llm_target is None and group_center is not None:
-                    gx, gy = group_center
-                    old_gd = torus_dist(bx, by, gx, gy)
-                    new_gd = torus_dist(nx, ny, gx, gy)
-                    if new_gd < old_gd:
-                        val += 1.8
+                # if llm_target is None and group_center is not None:
+                #     gx, gy = group_center
+                #     old_gd = torus_dist(bx, by, gx, gy)
+                #     new_gd = torus_dist(nx, ny, gx, gy)
+                #     if new_gd < old_gd:
+                #         val += 1.8
+                # if llm_target is None and group_center is not None:
+                #     gx, gy = group_center
+                #     old_gd = torus_dist(bx, by, gx, gy)
+                #     new_gd = torus_dist(nx, ny, gx, gy)
 
+                #     if new_gd < old_gd:
+                #         val += 1.8 if not jammed else 0.4
+
+
+                if llm_target is None and local_neighbors:
+                    avg_nx = sum(p[0] for p in local_neighbors) / len(local_neighbors)
+                    avg_ny = sum(p[1] for p in local_neighbors) / len(local_neighbors)
+
+                    old_ld = abs(bx - avg_nx) + abs(by - avg_ny)
+                    new_ld = abs(nx - avg_nx) + abs(ny - avg_ny)
+
+                    if cfg.task == 2:
+                        old_ld = min(abs(bx - avg_nx), world.w - abs(bx - avg_nx)) + min(abs(by - avg_ny), world.h - abs(by - avg_ny))
+                        new_ld = min(abs(nx - avg_nx), world.w - abs(nx - avg_nx)) + min(abs(ny - avg_ny), world.h - abs(ny - avg_ny))
+
+                    if new_ld < old_ld:
+                        val += 1.0
+# local alignment: move in roughly the same direction as nearby bats
+                if hasattr(world, "bats"):
+                    align_dx = 0
+                    align_dy = 0
+                    align_count = 0
+                    for other in world.bats:
+                        if other is self or not getattr(other, "alive", True) or getattr(other, "done", False):
+                            continue
+                        dloc = torus_dist(bx, by, other.x, other.y)
+                        if dloc <= 10:
+                            hx, hy = getattr(other, "heading", (0, 0))
+                            align_dx += hx
+                            align_dy += hy
+                            align_count += 1
+
+                    if align_count > 0:
+                        align_dx = 0 if align_dx == 0 else (1 if align_dx > 0 else -1)
+                        align_dy = 0 if align_dy == 0 else (1 if align_dy > 0 else -1)
+
+                        if (dx, dy) == (align_dx, align_dy):
+                            val += 1.5
                 # prey seeking
                 buzz_weight = 0.2
                 if self.hungry:
@@ -886,13 +957,14 @@ class RuleBasedBat(Bat):
                             nearest_prey_old = d_old
                             nearest_prey_new = d_new
 
+
                     if nearest_prey_new < nearest_prey_old:
-                        val += 2.5
+                        val += 3.5
                     if nearest_prey_new <= 10:
-                        val += 2.0
+                        val += 3.0
 
                 if (nx, ny) in world.prey:
-                    val += 14.0 if self.hungry else 1.0
+                    val += 18.0 if self.hungry else 1.0
                 elif self.hungry and (self.recruited_ticks > 0 or self.leader_mode == "BUZZ"):
                     val += 0.8
 
@@ -904,7 +976,7 @@ class RuleBasedBat(Bat):
                 val += 0.10 * free_neighbors
 
                 if (dx, dy) == (prev_hx, prev_hy):
-                    val += 0.15
+                    val += 0.05 if not jammed else -0.1
                 if (dx, dy) == (0, 0):
                     val -= 0.5
 
@@ -933,7 +1005,9 @@ class RuleBasedBat(Bat):
                 if prey_near or self.recruited_ticks > 0:
                     call = "BUZZ"
         best = self.smooth_move(best, world)
-
+        self.recent_positions.append((self.x, self.y))
+        if len(self.recent_positions) > 8:
+            self.recent_positions.pop(0)
         return best, call, ""
 # class RuleBasedBat(Bat):
 #     def act(self, world: World, cfg: SimConfig):
@@ -1361,9 +1435,9 @@ class LLMBat(Bat):
             mode = "EXPLORE"
 
         # hard override call
-        if predator_dist is not None and predator_dist <= (cfg.predator_radius + 4):
+        if predator_dist is not None and predator_dist <= (cfg.predator_radius + 5):
             call = "ALARM"
-        elif self.hungry and prey_dist is not None and prey_dist <= 30:
+        elif self.hungry and prey_dist is not None and prey_dist <= 40:
             call = "BUZZ"
         else:
             call = "NONE"
@@ -1401,10 +1475,82 @@ class LLMBat(Bat):
 
         action = self.smooth_move(action, world)
 
-        if action == (0, 0):
-            self.stay_streak += 1
-        else:
-            self.stay_streak = 0
+
+
+        #keep LLM bat inside block: not too far from flock, not too far in front
+
+        # soft flock-centering only if informed bat drifts very far away
+
+
+
+
+
+
+
+                # soft flock leash: only nudge the informed bat back if it drifts too far
+        if cfg.task == 2 and hasattr(world, "bat_positions") and world.bat_positions:
+            nearby = []
+            for ox, oy in world.bat_positions:
+                if (ox, oy) == (self.x, self.y):
+                    continue
+                dx = min(abs(self.x - ox), world.w - abs(self.x - ox))
+                dy = min(abs(self.y - oy), world.h - abs(self.y - oy))
+                d = dx + dy
+                if d <= 20:
+                    nearby.append((ox, oy))
+
+            if nearby:
+                avg_x = sum(p[0] for p in nearby) / len(nearby)
+                avg_y = sum(p[1] for p in nearby) / len(nearby)
+
+                dxg = min(abs(self.x - avg_x), world.w - abs(self.x - avg_x))
+                dyg = min(abs(self.y - avg_y), world.h - abs(self.y - avg_y))
+                group_dist = dxg + dyg
+
+                predator_safe = predator_dist is None or predator_dist > (cfg.predator_radius + 5)
+                prey_not_close = prey_dist is None or prey_dist > 12
+
+                if group_dist > 16 and predator_safe and prey_not_close:
+                    gx = 0 if avg_x == self.x else (1 if ((avg_x - self.x + world.w) % world.w) < (world.w / 2) else -1)
+                    gy = 0 if avg_y == self.y else (1 if ((avg_y - self.y + world.h) % world.h) < (world.h / 2) else -1)
+
+                    # blend, don't replace hard
+                    if action != (gx, gy) and (gx, gy) != (0, 0):
+                        action = self.smooth_move((gx, gy), world)
+        # if cfg.task == 2 and hasattr(world, "bat_positions") and world.bat_positions:
+        #     xs, ys = zip(*world.bat_positions)
+        #     gx = sum(xs) / len(xs)
+        #     gy = sum(ys) / len(ys)
+
+        #     def wrap_dist(ax, ay, bx, by):
+        #         dx = min(abs(ax - bx), world.w - abs(ax - bx))
+        #         dy = min(abs(ay - by), world.h - abs(ay - by))
+        #         return dx + dy
+
+        #     group_dist = wrap_dist(self.x, self.y, gx, gy)
+
+        #     predator_safe = predator_dist is None or predator_dist > (cfg.predator_radius + 5)
+        #     prey_not_close = prey_dist is None or prey_dist > 12
+
+        #     if group_dist > 18 and predator_safe and prey_not_close:
+        #         cx = 0 if gx == self.x else (1 if ((gx - self.x + world.w) % world.w) < (world.w / 2) else -1)
+        #         cy = 0 if gy == self.y else (1 if ((gy - self.y + world.h) % world.h) < (world.h / 2) else -1)
+
+        #         # only nudge, don't fully replace a strong prey/predator move
+        #         flock_nudge = (cx, cy)
+        #         if flock_nudge != (0, 0):
+        #             action = self.smooth_move(flock_nudge, world)
+        # if action == (0, 0):
+        #     self.stay_streak += 1
+        # else:
+        #     self.stay_streak = 0
+
+
+
+
+
+
+
         # # keep informed bat inside the flock, not far in front
         # if cfg.task == 2 and hasattr(world, "bat_positions") and world.bat_positions:
         #     xs, ys = zip(*world.bat_positions)
@@ -1429,6 +1575,7 @@ class LLMBat(Bat):
 
         self.last_action = action
         self.last_call = call
+        self.last_call_type = call
         self.last_rationale = rationale
         self.llm_mode = mode
 

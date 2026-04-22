@@ -5,7 +5,6 @@ class SimConfig(BaseModel):
     # World size (in grid cells)
     grid_w: int = 220
     grid_h: int = 110
-    n_predators: int = 1
     # Display window size (camera shows only part of world)
     window_w: int = 1400
     window_h: int = 900
@@ -25,6 +24,8 @@ class SimConfig(BaseModel):
     exit_width: int = 10
 
     # Task 2: prey / predator
+    n_predators: int = 3
+
     n_prey: int = 50
     predator_radius: int = 3
     prey_reward: float = 15.0
@@ -34,7 +35,7 @@ class SimConfig(BaseModel):
     diffuse: float = 0.18
     buzz_deposit: float = 2.5
     alarm_deposit: float = 3.0
-    predator_move_period: int = 2
+    predator_move_period: int = 3
     # Echolocation
     ping_noise: float = 0.12
 
