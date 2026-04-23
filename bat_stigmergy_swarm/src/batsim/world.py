@@ -287,9 +287,11 @@ class World:
         if self.cfg.task != 2:
             return
         
-        if self.step_count % self.cfg.predator_move_period != 0:
-
+        # if self.step_count % self.cfg.predator_move_period != 0:
+        if self.rng.random() > self.cfg.predator_move_chance:
             return
+
+
         for pred in self.predators:
             px, py = pred["pos"]
             predator_heading = pred["heading"]
