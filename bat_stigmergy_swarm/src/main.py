@@ -1089,10 +1089,15 @@ def build_world_and_bats(cfg, client):
 
 
 def main():
+    
     cfg = SimConfig()
+
     if len(sys.argv) >= 2:
         cfg.task = int(sys.argv[1])
-
+    if len(sys.argv) >= 3 and cfg.task == 1:
+        .3
+        3
+        cfg.task1_layout = sys.argv[2]
     random.seed(0)
     pygame.init()
     os.makedirs("frames", exist_ok=True)
@@ -1410,13 +1415,18 @@ def main():
                 # else:
                 #     b.last_call_type = "NONE"
 
+                # if call == "BUZZ":
+                #     world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit * 0.75)
+                #     b.last_call_step = world.step_count
+                #     b.last_call_type = "BUZZ"
                 if call == "BUZZ":
-                    world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit * 0.75)
                     b.last_call_step = world.step_count
                     b.last_call_type = "BUZZ"
+                    if cfg.stigmergy_on:
+                        world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit * 0.75)
 
                     # informed leader recruits nearby hungry bats
-                    if isinstance(b, LLMBat):
+                    if isinstance(b, LLMBat) and cfg.recruitment_on:
                         for other in bats:
                             if other is b or getattr(other, "done", False) or not getattr(other, "alive", True):
                                 continue
@@ -1434,13 +1444,18 @@ def main():
                                 other.leader_mode = "BUZZ"
                                 other.recruited_ticks = 20
 
+                # elif call == "ALARM":
+                #     world.sound.deposit_alarm(b.x, b.y, cfg.alarm_deposit * 1.0)
+                #     b.last_call_step = world.step_count
+                #     b.last_call_type = "ALARM"
                 elif call == "ALARM":
-                    world.sound.deposit_alarm(b.x, b.y, cfg.alarm_deposit * 1.0)
                     b.last_call_step = world.step_count
                     b.last_call_type = "ALARM"
+                    if cfg.stigmergy_on:
+                        world.sound.deposit_alarm(b.x, b.y, cfg.alarm_deposit * 1.0)
 
                     # informed leader recruits nearby bats into coordinated escape
-                    if isinstance(b, LLMBat):
+                    if isinstance(b, LLMBat) and cfg.recruitment_on:
                         for other in bats:
                             if other is b or getattr(other, "done", False) or not getattr(other, "alive", True):
                                 continue

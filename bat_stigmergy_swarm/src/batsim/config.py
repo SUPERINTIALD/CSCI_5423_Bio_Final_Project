@@ -18,7 +18,17 @@ class SimConfig(BaseModel):
 
     # Task
     task: int = 1  # 1 = cave exit, 2 = predator/prey outside cave
+    task1_layout: str = "corridor"   # corridor / bottleneck / zigzag / culdesac
+    # Task 1
 
+    # Task 2 experiment toggles
+    stigmergy_on: bool = True
+    privileged_obs: bool = True
+    recruitment_on: bool = True
+
+    # Batch / evaluation
+    results_dir: str = "results"
+    render: bool = True
     # Cave / world generation
     obstacle_density: float = 0.08
     exit_width: int = 10

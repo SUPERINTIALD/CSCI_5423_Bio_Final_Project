@@ -205,6 +205,7 @@ from typing import Tuple
 from .world import DIRS, World
 from .config import SimConfig
 from ..llm.lm_studio_client import LMStudioClient
+# from CSCI_5423_Bio_Final_Project.bat_stigmergy_swarm.src.batsim import world
 
 
 MOVE_NAMES = {
@@ -494,6 +495,9 @@ class Bat:
     #         "predator_dist": predator_dist,
     #         "predator_vec": predator_vec,
     #     }
+   
+   
+   
     def entity_cues(self, world: World, radius: int = 18):
         def torus_dist(ax, ay, bx, by):
             dx = abs(ax - bx)
@@ -511,42 +515,59 @@ class Bat:
                     dx -= world.w
                 elif dx < -world.w / 2:
                     dx += world.w
+
                 if dy > world.h / 2:
                     dy -= world.h
                 elif dy < -world.h / 2:
                     dy += world.h
             return dx, dy
 
-        # nearest prey: global for informed bat
+        # -------------------------
+        # PREY CUES
+        # privileged_obs=True  -> nearest prey can be global
+        # privileged_obs=False -> nearest prey only if within local radius
+        # -------------------------
         nearest_prey = None
         nearest_prey_dist = 10**9
         prey_count = 0
+
         for px, py in world.prey:
             d = torus_dist(self.x, self.y, px, py)
+
+            if d <= radius:
+                prey_count += 1
+
+            if not world.cfg.privileged_obs and d > radius:
+                continue
+
             if d < nearest_prey_dist:
                 nearest_prey_dist = d
                 nearest_prey = (px, py)
-            if d <= radius:
-                prey_count += 1
 
         prey_vec = None
         if nearest_prey is not None:
             prey_vec = torus_delta(self.x, self.y, nearest_prey[0], nearest_prey[1])
 
-        # predator_dist = None
-        # predator_vec = None
-        # if world.cfg.task == 2:
-        #     predator_dist = torus_dist(self.x, self.y, world.predator_pos[0], world.predator_pos[1])
-        #     predator_vec = torus_delta(self.x, self.y, world.predator_pos[0], world.predator_pos[1])
+        # -------------------------
+        # PREDATOR CUES
+        # privileged_obs=True  -> nearest predator can be global
+        # privileged_obs=False -> nearest predator only if within local radius
+        # -------------------------
         predator_dist = None
         predator_vec = None
         predator_pos = None
+
         if world.cfg.task == 2 and hasattr(world, "predators") and world.predators:
-            nearest = None
             best_d = 10**9
+            nearest = None
+
             for pred in world.predators:
                 px, py = pred["pos"]
                 d = torus_dist(self.x, self.y, px, py)
+
+                if not world.cfg.privileged_obs and d > radius:
+                    continue
+
                 if d < best_d:
                     best_d = d
                     nearest = (px, py)
@@ -562,9 +583,104 @@ class Bat:
             "nearest_prey_vec": prey_vec,
             "predator_dist": predator_dist,
             "predator_vec": predator_vec,
-            # "predator_pos": world.predator_pos if world.cfg.task == 2 else None,
             "predator_pos": predator_pos,
         }
+    # def entity_cues(self, world: World, radius: int = 18):
+    #     def torus_dist(ax, ay, bx, by):
+    #         dx = abs(ax - bx)
+    #         dy = abs(ay - by)
+    #         if world.cfg.task == 2:
+    #             dx = min(dx, world.w - dx)
+    #             dy = min(dy, world.h - dy)
+    #         return dx + dy
+
+    #     def torus_delta(ax, ay, bx, by):
+    #         dx = bx - ax
+    #         dy = by - ay
+    #         if world.cfg.task == 2:
+    #             if dx > world.w / 2:
+    #                 dx -= world.w
+    #             elif dx < -world.w / 2:
+    #                 dx += world.w
+    #             if dy > world.h / 2:
+    #                 dy -= world.h
+    #             elif dy < -world.h / 2:
+    #                 dy += world.h
+    #         return dx, dy
+
+    #     # nearest prey: global for informed bat
+    #     # nearest_prey = None
+    #     # nearest_prey_dist = 10**9
+    #     # prey_count = 0
+    #     # for px, py in world.prey:
+    #     #     d = torus_dist(self.x, self.y, px, py)
+    #     #     if d < nearest_prey_dist:
+    #     #         nearest_prey_dist = d
+    #     #         nearest_prey = (px, py)
+    #     #     if d <= radius:
+    #     #         prey_count += 1
+
+    #     predator_dist = None
+    #     predator_vec = None
+    #     predator_pos = None
+
+    #     if world.cfg.task == 2 and hasattr(world, "predators") and world.predators:
+    #         best_d = 10**9
+    #         nearest = None
+
+    #         for pred in world.predators:
+    #             px, py = pred["pos"]
+    #             d = torus_dist(self.x, self.y, px, py)
+
+    #             # local-only mode: only sense predator inside radius
+    #             if not world.cfg.privileged_obs and d > radius:
+    #                 continue
+
+    #             if d < best_d:
+    #                 best_d = d
+    #                 nearest = (px, py)
+
+    #         if nearest is not None:
+    #             predator_pos = nearest
+    #             predator_dist = best_d
+    #             predator_vec = torus_delta(self.x, self.y, predator_pos[0], predator_pos[1])
+
+    #     prey_vec = None
+    #     if nearest_prey is not None:
+    #         prey_vec = torus_delta(self.x, self.y, nearest_prey[0], nearest_prey[1])
+
+    #     # predator_dist = None
+    #     # predator_vec = None
+    #     # if world.cfg.task == 2:
+    #     #     predator_dist = torus_dist(self.x, self.y, world.predator_pos[0], world.predator_pos[1])
+    #     #     predator_vec = torus_delta(self.x, self.y, world.predator_pos[0], world.predator_pos[1])
+    #     predator_dist = None
+    #     predator_vec = None
+    #     predator_pos = None
+    #     if world.cfg.task == 2 and hasattr(world, "predators") and world.predators:
+    #         nearest = None
+    #         best_d = 10**9
+    #         for pred in world.predators:
+    #             px, py = pred["pos"]
+    #             d = torus_dist(self.x, self.y, px, py)
+    #             if d < best_d:
+    #                 best_d = d
+    #                 nearest = (px, py)
+
+    #         if nearest is not None:
+    #             predator_pos = nearest
+    #             predator_dist = best_d
+    #             predator_vec = torus_delta(self.x, self.y, predator_pos[0], predator_pos[1])
+
+    #     return {
+    #         "nearby_prey_count": prey_count,
+    #         "nearest_prey_dist": None if nearest_prey is None else nearest_prey_dist,
+    #         "nearest_prey_vec": prey_vec,
+    #         "predator_dist": predator_dist,
+    #         "predator_vec": predator_vec,
+    #         # "predator_pos": world.predator_pos if world.cfg.task == 2 else None,
+    #         "predator_pos": predator_pos,
+    #     }
 
 
     def _dir_index(self, move):
@@ -668,6 +784,7 @@ class Bat:
 
 class RuleBasedBat(Bat):
     def act(self, world: World, cfg: SimConfig):
+
         if self.recent_positions is None:
             self.recent_positions = []
         if self.done or not self.alive:
@@ -818,7 +935,8 @@ class RuleBasedBat(Bat):
                 old_pd = torus_dist(bx, by, px, py)
                 new_pd = torus_dist(nx, ny, px, py)
                 candidate_predator_close = old_pd <= (cfg.predator_radius + 5)
-
+                buzz_here = float(world.sound.buzz[ny, nx]) if cfg.stigmergy_on else 0.0
+                alarm_here = float(world.sound.alarm[ny, nx]) if cfg.stigmergy_on else 0.0
                 if world.predator_risk(nx, ny) > 0:
                     val -= 40.0
 
@@ -827,7 +945,8 @@ class RuleBasedBat(Bat):
                 if candidate_predator_close and new_pd > old_pd:
                     val += 2.5
 
-                val -= float(world.sound.alarm[ny, nx]) * 3.0
+                # val -= float(world.sound.alarm[ny, nx]) * 3.0
+                val -= alarm_here * 3.0
                 # jam recovery near obstacles: prioritize escaping local traps
                 if jammed:
                     clearance_score = 0
@@ -945,7 +1064,8 @@ class RuleBasedBat(Bat):
                 if self.recruited_ticks > 0 or (self.follow_leader_ticks > 0 and self.leader_mode == "BUZZ"):
                     buzz_weight = 3.5
 
-                val += float(world.sound.buzz[ny, nx]) * buzz_weight
+                # val += float(world.sound.buzz[ny, nx]) * buzz_weight
+                val += buzz_here * buzz_weight
 
                 if self.hungry and world.prey:
                     nearest_prey_old = 10**9

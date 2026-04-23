@@ -27,7 +27,7 @@ class World:
 
         # task-specific world generation
         if self.cfg.task == 1:
-            self._spawn_task1_cave()
+            self._spawn_task1_layout()
         else:
             self._spawn_task2_open_world()
 
@@ -72,6 +72,22 @@ class World:
     # -------------------------
     # TASK 1 WORLD
     # -------------------------
+
+    def _spawn_task1_layout(self):
+        layout = getattr(self.cfg, "task1_layout", "corridor")
+
+        if layout == "corridor":
+            self._spawn_task1_cave()
+        elif layout == "bottleneck":
+            self._spawn_task1_bottleneck()
+        elif layout == "zigzag":
+            self._spawn_task1_zigzag()
+        elif layout == "culdesac":
+            self._spawn_task1_culdesac()
+        else:
+            raise ValueError(f"Unknown task1_layout: {layout}")
+        
+
     def _spawn_task1_cave(self):
         """
         Cave on the left, long open outside on the right.
@@ -96,6 +112,70 @@ class World:
         self._add_rock_blobs(n_blobs=20, r_min=1, r_max=3)
 
         # fully open outside region for task 1
+        self.obstacles[:, self.outside_x0:] = 0
+
+
+    def _spawn_task1_bottleneck(self):
+        # start from your normal cave
+        self._spawn_task1_cave()
+
+        # carve a narrow neck in the middle
+        neck_x0 = self.outside_x0 // 2
+        neck_w = 6
+        neck_center = self.h // 2
+        neck_half = 2
+
+        self.obstacles[:, neck_x0:neck_x0 + neck_w] = 1
+        self.obstacles[
+            max(1, neck_center - neck_half):min(self.h - 1, neck_center + neck_half + 1),
+            neck_x0:neck_x0 + neck_w
+        ] = 0
+
+        # keep outside open
+        self.obstacles[:, self.outside_x0:] = 0
+
+
+    def _spawn_task1_zigzag(self):
+        # fully blocked start
+        self.obstacles[:, :] = 1
+
+        # piecewise zig-zag tunnel
+        xs = [0, self.outside_x0 // 4, self.outside_x0 // 2, 3 * self.outside_x0 // 4, self.outside_x0]
+        ys = [self.h // 2, self.h // 3, 2 * self.h // 3, self.h // 3, self.h // 2]
+        half_width = max(3, self.h // 12)
+
+        for seg in range(len(xs) - 1):
+            x0, x1 = xs[seg], xs[seg + 1]
+            y0, y1 = ys[seg], ys[seg + 1]
+            for x in range(x0, x1):
+                t = (x - x0) / max(1, (x1 - x0))
+                cy = int(round((1 - t) * y0 + t * y1))
+                self.obstacles[max(1, cy - half_width):min(self.h - 1, cy + half_width + 1), x] = 0
+
+        self._add_rock_blobs(n_blobs=18, r_min=1, r_max=2)
+        self.obstacles[:, self.outside_x0:] = 0
+
+
+    def _spawn_task1_culdesac(self):
+        # start from your normal cave
+        self._spawn_task1_cave()
+
+        # add a side branch / dead-end pocket
+        branch_x0 = self.outside_x0 // 3
+        branch_x1 = branch_x0 + 16
+        branch_y0 = min(self.h - 12, self.h // 2 + 5)
+        branch_y1 = min(self.h - 2, branch_y0 + 10)
+
+        # carve pocket
+        self.obstacles[branch_y0:branch_y1, branch_x0:branch_x1] = 0
+
+        # narrow opening from main corridor into the pocket
+        mouth_x0 = branch_x0
+        mouth_x1 = branch_x0 + 3
+        mouth_y0 = branch_y0 - 2
+        mouth_y1 = branch_y0 + 2
+        self.obstacles[max(1, mouth_y0):min(self.h - 1, mouth_y1), mouth_x0:mouth_x1] = 0
+
         self.obstacles[:, self.outside_x0:] = 0
 
     def _add_rock_blobs(self, n_blobs=10, r_min=1, r_max=3):
