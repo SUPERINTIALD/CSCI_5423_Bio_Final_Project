@@ -746,7 +746,24 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
         screen.fill((18, 48, 18))
     else:
         screen.fill((12, 12, 18))
+    def wrapped_screen_positions(x, y, cfg, world, camera_x, camera_y):
+        base_sx = x * cfg.cell_px - camera_x
+        base_sy = y * cfg.cell_px - camera_y
 
+        if cfg.task != 2:
+            return [(base_sx, base_sy)]
+
+        offsets_x = [0, -world.w * cfg.cell_px, world.w * cfg.cell_px]
+        offsets_y = [0, -world.h * cfg.cell_px, world.h * cfg.cell_px]
+
+        pts = []
+        for ox in offsets_x:
+            for oy in offsets_y:
+                sx = base_sx + ox
+                sy = base_sy + oy
+                if -40 <= sx <= cfg.window_w + 40 and -40 <= sy <= cfg.window_h + 40:
+                    pts.append((sx, sy))
+        return pts
     # task 2 open-world green field
     if cfg.task == 2:
         pygame.draw.rect(
@@ -783,10 +800,17 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
 
     # prey / predator
     if cfg.task == 2:
+        # for (x, y) in world.prey:
+        #     sx = x * cfg.cell_px - camera_x
+        #     sy = y * cfg.cell_px - camera_y
+        #     if -cfg.cell_px <= sx <= cfg.window_w and -cfg.cell_px <= sy <= cfg.window_h:
+        #         pygame.draw.rect(
+        #             screen,
+        #             (255, 230, 90),
+        #             (sx + 2, sy + 2, max(2, cfg.cell_px - 4), max(2, cfg.cell_px - 4)),
+        #         )
         for (x, y) in world.prey:
-            sx = x * cfg.cell_px - camera_x
-            sy = y * cfg.cell_px - camera_y
-            if -cfg.cell_px <= sx <= cfg.window_w and -cfg.cell_px <= sy <= cfg.window_h:
+            for sx, sy in wrapped_screen_positions(x, y, cfg, world, camera_x, camera_y):
                 pygame.draw.rect(
                     screen,
                     (255, 230, 90),
@@ -805,25 +829,46 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
 
         # predator
 
+        # for pred in getattr(world, "predators", []):
+        #     px, py = pred["pos"]
+        #     pcx = px * cfg.cell_px + cfg.cell_px // 2 - camera_x
+        #     pcy = py * cfg.cell_px + cfg.cell_px // 2 - camera_y
+        #     pr = max(12, cfg.predator_radius * cfg.cell_px)
+
+        #     pygame.draw.polygon(
+        #         screen,
+        #         (110, 20, 20),
+        #         [(pcx - pr, pcy), (pcx - pr // 3, pcy - pr // 2), (pcx - pr // 3, pcy + pr // 2)]
+        #     )
+        #     pygame.draw.polygon(
+        #         screen,
+        #         (110, 20, 20),
+        #         [(pcx + pr, pcy), (pcx + pr // 3, pcy - pr // 2), (pcx + pr // 3, pcy + pr // 2)]
+        #     )
+
+        #     pygame.draw.circle(screen, (170, 30, 30), (pcx, pcy), pr // 2)
+        #     pygame.draw.circle(screen, (60, 10, 10), (pcx, pcy), pr // 2, width=2)
+
         for pred in getattr(world, "predators", []):
             px, py = pred["pos"]
-            pcx = px * cfg.cell_px + cfg.cell_px // 2 - camera_x
-            pcy = py * cfg.cell_px + cfg.cell_px // 2 - camera_y
             pr = max(12, cfg.predator_radius * cfg.cell_px)
 
-            pygame.draw.polygon(
-                screen,
-                (110, 20, 20),
-                [(pcx - pr, pcy), (pcx - pr // 3, pcy - pr // 2), (pcx - pr // 3, pcy + pr // 2)]
-            )
-            pygame.draw.polygon(
-                screen,
-                (110, 20, 20),
-                [(pcx + pr, pcy), (pcx + pr // 3, pcy - pr // 2), (pcx + pr // 3, pcy + pr // 2)]
-            )
+            for sx, sy in wrapped_screen_positions(px, py, cfg, world, camera_x, camera_y):
+                pcx = sx + cfg.cell_px // 2
+                pcy = sy + cfg.cell_px // 2
 
-            pygame.draw.circle(screen, (170, 30, 30), (pcx, pcy), pr // 2)
-            pygame.draw.circle(screen, (60, 10, 10), (pcx, pcy), pr // 2, width=2)
+                pygame.draw.polygon(
+                    screen,
+                    (110, 20, 20),
+                    [(pcx - pr, pcy), (pcx - pr // 3, pcy - pr // 2), (pcx - pr // 3, pcy + pr // 2)]
+                )
+                pygame.draw.polygon(
+                    screen,
+                    (110, 20, 20),
+                    [(pcx + pr, pcy), (pcx + pr // 3, pcy - pr // 2), (pcx + pr // 3, pcy + pr // 2)]
+                )
+                pygame.draw.circle(screen, (170, 30, 30), (pcx, pcy), pr // 2)
+                pygame.draw.circle(screen, (60, 10, 10), (pcx, pcy), pr // 2, width=2)
         # px, py = world.predator_pos
         # pcx = px * cfg.cell_px + cfg.cell_px // 2 - camera_x
         # pcy = py * cfg.cell_px + cfg.cell_px // 2 - camera_y
@@ -846,23 +891,88 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
         # pygame.draw.circle(screen, (60, 10, 10), (pcx, pcy), pr // 2, width=2)
 
     # bats
+    
+    # for b in bats:
+    #     if not getattr(b, "visible", True):
+    #         continue
+    #     cx = b.x * cfg.cell_px + cfg.cell_px // 2 - camera_x
+    #     cy = b.y * cfg.cell_px + cfg.cell_px // 2 - camera_y
+
+    #     if cx < -20 or cx > cfg.window_w + 20 or cy < -20 or cy > cfg.window_h + 20:
+    #         continue
+
+    #     if world.step_count - getattr(b, "last_ping_step", -999) <= 3:
+    #         ping_color = (255, 100, 100) if isinstance(b, LLMBat) else (120, 180, 255)
+    #         for r in [10, 18, 26]:
+    #             pygame.draw.circle(screen, ping_color, (cx, cy), r, width=1)
+
+    #     # color = (100, 220, 100) if getattr(b, "done", False) else (
+    #     #     (220, 70, 70) if isinstance(b, LLMBat) else (210, 210, 225)
+    #     # )
+    #     if getattr(b, "dying", False):
+    #         fade_ratio = max(0.0, b.fade_ticks / max(1, b.fade_total))
+    #         color = (
+    #             int(180 * fade_ratio),
+    #             int(60 * fade_ratio),
+    #             int(60 * fade_ratio),
+    #         )
+    #         bat_radius = max(1, int(max(2, cfg.cell_px // 3) * fade_ratio))
+    #     elif getattr(b, "done", False):
+    #         color = (100, 220, 100)
+    #         bat_radius = max(2, cfg.cell_px // 3)
+    #     else:
+    #         color = (220, 70, 70) if isinstance(b, LLMBat) else (210, 210, 225)
+    #         bat_radius = max(2, cfg.cell_px // 3)
+
+    #     # pygame.draw.circle(screen, color, (cx, cy), max(2, cfg.cell_px // 3))
+
+    #     pygame.draw.circle(screen, color, (cx, cy), bat_radius)
+    #     hx, hy = getattr(b, "heading", (1, 0))
+    #     tip_x = cx + hx * 8
+    #     tip_y = cy + hy * 8
+    #     pygame.draw.line(screen, (255, 255, 255), (cx, cy), (tip_x, tip_y), 2)
+        
+    #     # show recent social calls in Task 2
+
+    #     # show recent social calls in Task 2
+    #     if cfg.task == 2 and world.step_count - getattr(b, "last_call_step", -999) <= 12:
+    #         call_type = getattr(b, "last_call_type", "NONE")
+
+    #         if isinstance(b, LLMBat):
+    #             # LLM-specific palette
+    #             if call_type == "BUZZ":
+    #                 call_color = (255, 170, 60)   # orange-gold for LLM buzz
+    #                 radii = [16, 26, 36, 46]
+    #             elif call_type == "ALARM":
+    #                 call_color = (120, 220, 255)  # cyan-blue for LLM alarm
+    #                 radii = [18, 30, 42, 54, 68]
+    #             else:
+    #                 call_color = None
+    #                 radii = []
+    #         else:
+    #             # Rule-based palette
+    #             if call_type == "BUZZ":
+    #                 call_color = (255, 230, 90)   # yellow
+    #                 radii = [14, 22]
+    #             elif call_type == "ALARM":
+    #                 call_color = (170, 90, 255)   # purple
+    #                 radii = [16, 26, 36]
+    #             else:
+    #                 call_color = None
+    #                 radii = []
+
+    #         if call_color is not None:
+    #             for r in radii:
+    #                 pygame.draw.circle(screen, call_color, (cx, cy), r, width=2)
+
+
+
+
     for b in bats:
         if not getattr(b, "visible", True):
             continue
-        cx = b.x * cfg.cell_px + cfg.cell_px // 2 - camera_x
-        cy = b.y * cfg.cell_px + cfg.cell_px // 2 - camera_y
 
-        if cx < -20 or cx > cfg.window_w + 20 or cy < -20 or cy > cfg.window_h + 20:
-            continue
-
-        if world.step_count - getattr(b, "last_ping_step", -999) <= 3:
-            ping_color = (255, 100, 100) if isinstance(b, LLMBat) else (120, 180, 255)
-            for r in [10, 18, 26]:
-                pygame.draw.circle(screen, ping_color, (cx, cy), r, width=1)
-
-        # color = (100, 220, 100) if getattr(b, "done", False) else (
-        #     (220, 70, 70) if isinstance(b, LLMBat) else (210, 210, 225)
-        # )
+        # compute style ONCE so all wrapped copies use the same radius/colors
         if getattr(b, "dying", False):
             fade_ratio = max(0.0, b.fade_ticks / max(1, b.fade_total))
             color = (
@@ -878,46 +988,68 @@ def draw(screen, cfg, world, bats, font, info_lines, camera_x, camera_y):
             color = (220, 70, 70) if isinstance(b, LLMBat) else (210, 210, 225)
             bat_radius = max(2, cfg.cell_px // 3)
 
-        # pygame.draw.circle(screen, color, (cx, cy), max(2, cfg.cell_px // 3))
+        # draw wrapped copies in task 2, single copy otherwise
+        if cfg.task == 2:
+            draw_positions = wrapped_screen_positions(b.x, b.y, cfg, world, camera_x, camera_y)
+        else:
+            sx = b.x * cfg.cell_px - camera_x
+            sy = b.y * cfg.cell_px - camera_y
+            draw_positions = [(sx, sy)]
 
-        pygame.draw.circle(screen, color, (cx, cy), bat_radius)
-        hx, hy = getattr(b, "heading", (1, 0))
-        tip_x = cx + hx * 8
-        tip_y = cy + hy * 8
-        pygame.draw.line(screen, (255, 255, 255), (cx, cy), (tip_x, tip_y), 2)
-        
-        # show recent social calls in Task 2
+        for sx, sy in draw_positions:
+            cx = sx + cfg.cell_px // 2
+            cy = sy + cfg.cell_px // 2
 
-        # show recent social calls in Task 2
-        if cfg.task == 2 and world.step_count - getattr(b, "last_call_step", -999) <= 8:
-            call_type = getattr(b, "last_call_type", "NONE")
+            if cx < -80 or cx > cfg.window_w + 80 or cy < -80 or cy > cfg.window_h + 80:
+                continue
 
-            if isinstance(b, LLMBat):
-                # LLM-specific palette
-                if call_type == "BUZZ":
-                    call_color = (255, 170, 60)   # orange-gold for LLM buzz
-                    radii = [16, 26, 36]
-                elif call_type == "ALARM":
-                    call_color = (120, 220, 255)  # cyan-blue for LLM alarm
-                    radii = [18, 30, 42]
+            if world.step_count - getattr(b, "last_ping_step", -999) <= 3:
+                ping_color = (255, 100, 100) if isinstance(b, LLMBat) else (120, 180, 255)
+                for r in [10, 18, 26]:
+                    pygame.draw.circle(screen, ping_color, (cx, cy), r, width=1)
+
+            pygame.draw.circle(screen, color, (cx, cy), bat_radius)
+
+            # hx, hy = getattr(b, "heading", (1, 0))
+            # tip_x = cx + hx * 8
+            # tip_y = cy + hy * 8
+            # pygame.draw.line(screen, (255, 255, 255), (cx, cy), (tip_x, tip_y), 2)
+
+
+            hx, hy = getattr(b, "heading", (1, 0))
+            hx = 0 if hx == 0 else (1 if hx > 0 else -1)
+            hy = 0 if hy == 0 else (1 if hy > 0 else -1)
+            tip_x = cx + hx * 8
+            tip_y = cy + hy * 8
+            pygame.draw.line(screen, (255, 255, 255), (cx, cy), (tip_x, tip_y), 2)
+            # recent social-call rings
+            if cfg.task == 2 and world.step_count - getattr(b, "last_call_step", -999) <= 12:
+                call_type = getattr(b, "last_call_type", "NONE")
+
+                if isinstance(b, LLMBat):
+                    if call_type == "BUZZ":
+                        call_color = (255, 170, 60)   # orange-gold
+                        radii = [16, 26, 36, 46]
+                    elif call_type == "ALARM":
+                        call_color = (120, 220, 255)  # cyan-blue
+                        radii = [18, 30, 42, 54, 68]
+                    else:
+                        call_color = None
+                        radii = []
                 else:
-                    call_color = None
-                    radii = []
-            else:
-                # Rule-based palette
-                if call_type == "BUZZ":
-                    call_color = (255, 230, 90)   # yellow
-                    radii = [14, 22]
-                elif call_type == "ALARM":
-                    call_color = (170, 90, 255)   # purple
-                    radii = [16, 26, 36]
-                else:
-                    call_color = None
-                    radii = []
+                    if call_type == "BUZZ":
+                        call_color = (255, 230, 90)   # yellow
+                        radii = [14, 22]
+                    elif call_type == "ALARM":
+                        call_color = (170, 90, 255)   # purple
+                        radii = [16, 26, 36]
+                    else:
+                        call_color = None
+                        radii = []
 
-            if call_color is not None:
-                for r in radii:
-                    pygame.draw.circle(screen, call_color, (cx, cy), r, width=2)
+                if call_color is not None:
+                    for r in radii:
+                        pygame.draw.circle(screen, call_color, (cx, cy), r, width=2)
         # if cfg.task == 2 and world.step_count - getattr(b, "last_call_step", -999) <= 6:
         #     if getattr(b, "last_call_type", "NONE") == "BUZZ":
         #         call_color = (255, 230, 90)   # bright yellow
@@ -1134,8 +1266,34 @@ def main():
 
             moved = (b.x, b.y) != (old_x, old_y)
 
+            # if moved:
+            #     b.heading = (b.x - old_x, b.y - old_y)
+            #     b.stuck_steps = 0
+            # else:
+            #     b.stuck_steps += 1
+            #     b.score -= 0.15
             if moved:
-                b.heading = (b.x - old_x, b.y - old_y)
+                if cfg.task == 2:
+                    dxh = b.x - old_x
+                    dyh = b.y - old_y
+
+                    # wrap-aware heading so crossing edges stays a 1-cell move
+                    if dxh > world.w / 2:
+                        dxh -= world.w
+                    elif dxh < -world.w / 2:
+                        dxh += world.w
+
+                    if dyh > world.h / 2:
+                        dyh -= world.h
+                    elif dyh < -world.h / 2:
+                        dyh += world.h
+
+                    dxh = 0 if dxh == 0 else (1 if dxh > 0 else -1)
+                    dyh = 0 if dyh == 0 else (1 if dyh > 0 else -1)
+                    b.heading = (dxh, dyh)
+                else:
+                    b.heading = (b.x - old_x, b.y - old_y)
+
                 b.stuck_steps = 0
             else:
                 b.stuck_steps += 1
@@ -1230,10 +1388,11 @@ def main():
                     b.follow_leader_ticks = 0
                     b.leader_mode = "NONE"
 
-            if cfg.task == 2 and world.step_count % 10 == 0:
+            # if cfg.task == 2 and world.step_count % 10 == 0:
+            if cfg.task == 2:
                 # print("Predator:", world.predator_pos)
-                for i, b in enumerate(bats[:5]):
-                    print(f"Bat {i}: {(b.x, b.y)}")
+                # for i, b in enumerate(bats[:5]):
+                #     print(f"Bat {i}: {(b.x, b.y)}")
                 # if call == "BUZZ":
                 #     world.sound.deposit_buzz(b.x, b.y, cfg.buzz_deposit * 0.5)
                 # elif call == "ALARM":

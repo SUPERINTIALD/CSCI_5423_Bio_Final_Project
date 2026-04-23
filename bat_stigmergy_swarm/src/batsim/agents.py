@@ -1437,7 +1437,9 @@ class LLMBat(Bat):
         # hard override call
         if predator_dist is not None and predator_dist <= (cfg.predator_radius + 5):
             call = "ALARM"
-        elif self.hungry and prey_dist is not None and prey_dist <= 40:
+        # elif self.hungry and prey_dist is not None and prey_dist <= 40:
+        elif prey_dist is not None and prey_dist <= 30:
+
             call = "BUZZ"
         else:
             call = "NONE"
@@ -1580,10 +1582,10 @@ class LLMBat(Bat):
         self.llm_mode = mode
 
         print(
-            f"LLM DECISION | pos={(self.x, self.y)} | mode={mode} | "
-            f"predator_dist={predator_dist} | prey_dist={prey_dist} | "
-            f"call={call} | action={action}"
-            f"action={self.last_action} | rationale={self.last_rationale}"
+            f"LLM DECISION | pos={(self.x, self.y)} | mode={mode} | \n "
+            f"predator_dist={predator_dist} | prey_dist={prey_dist} | \n "
+            f"call={call} | action={action} | call_Type={self.last_call_type}\n"
+            f"action={self.last_action} | rationale={self.last_rationale}\n"
 
         )
         # action, call, rationale = self._parse(out)
