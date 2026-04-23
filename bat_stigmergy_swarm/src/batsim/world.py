@@ -93,7 +93,7 @@ class World:
             else:
                 self.obstacles[:, x] = 0
 
-        self._add_rock_blobs(n_blobs=30, r_min=1, r_max=3)
+        self._add_rock_blobs(n_blobs=20, r_min=1, r_max=3)
 
         # fully open outside region for task 1
         self.obstacles[:, self.outside_x0:] = 0
@@ -286,6 +286,7 @@ class World:
     def _move_predator(self):
         if self.cfg.task != 2:
             return
+        
         if self.step_count % self.cfg.predator_move_period != 0:
 
             return
