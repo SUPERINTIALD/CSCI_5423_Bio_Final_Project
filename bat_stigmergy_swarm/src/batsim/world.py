@@ -273,17 +273,50 @@ class World:
         if self.cfg.task != 2 or not self.prey:
             return
 
+        old_prey = list(self.prey)
+        self.rng.shuffle(old_prey)
+
+        occupied = set()
         new_prey = set()
-        for (x, y) in self.prey:
+
+        for (x, y) in old_prey:
+            candidates = []
+
+            # sometimes try to move first
             if self.rng.random() < 0.25:
-                dx, dy = self.rng.choice(DIRS)
-                nx, ny = self.wrap_xy(x + dx, y + dy)
-                if self.is_free(nx, ny):
+                dirs = DIRS[:]
+                self.rng.shuffle(dirs)
+                for dx, dy in dirs:
+                    nx, ny = self.wrap_xy(x + dx, y + dy)
+                    if self.is_free(nx, ny):
+                        candidates.append((nx, ny))
+
+            # staying put should be fallback, not first choice
+            candidates.append((x, y))
+
+            placed = False
+            for nx, ny in candidates:
+                if (nx, ny) not in occupied:
                     new_prey.add((nx, ny))
-                else:
-                    new_prey.add((x, y))
-            else:
+                    occupied.add((nx, ny))
+                    placed = True
+                    break
+
+            if not placed:
+                # final fallback: try any nearby free unoccupied square
+                for dx, dy in DIRS:
+                    nx, ny = self.wrap_xy(x + dx, y + dy)
+                    if self.is_free(nx, ny) and (nx, ny) not in occupied:
+                        new_prey.add((nx, ny))
+                        occupied.add((nx, ny))
+                        placed = True
+                        break
+
+            if not placed:
+                # extremely rare: keep original even if crowded
+                # but at least do not silently crash
                 new_prey.add((x, y))
+
         self.prey = new_prey
 
     # def _move_predator(self):
@@ -388,7 +421,7 @@ class World:
                         return dx + dy
 
                     nearest = min(active, key=torus_dist)
-                    if torus_dist(nearest) <= 18:
+                    if torus_dist(nearest) <= 24:
                         target = nearest
 
             if target is not None:

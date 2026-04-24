@@ -3,6 +3,8 @@ import os
 import random
 from statistics import mean
 
+# from CSCI_5423_Bio_Final_Project.bat_stigmergy_swarm.src.batsim import world
+
 from .batsim.config import SimConfig
 from .batsim.agents import LLMBat
 from .llm.lm_studio_client import LMStudioClient
@@ -12,13 +14,33 @@ from .main import build_world_and_bats, choose_resolved_move
 def run_task2_episode(cfg, client, seed):
     random.seed(seed)
     world, bats = build_world_and_bats(cfg, client)
-
+    initial_prey_count = len(world.prey)
     for b in bats:
         b.first_prey_step = None
 
+    time_to_all_prey = None
+    timeout = 0
+    all_bats_dead = 0
+    all_prey_collected = 0
+    episode_result = "partial"
+
     while world.step_count < cfg.max_steps:
+        # alive_active = [b for b in bats if getattr(b, "alive", True) and not getattr(b, "done", False)]
+        # if not alive_active:
+        #     break
         alive_active = [b for b in bats if getattr(b, "alive", True) and not getattr(b, "done", False)]
+
+        # failure: all bats dead
         if not alive_active:
+            all_bats_dead = 1
+            episode_result = "failure"
+            break
+
+        # success: all prey collected
+        if len(world.prey) == 0:
+            all_prey_collected = 1 if len(world.prey) == 0 else 0
+            time_to_all_prey = world.step_count
+            episode_result = "success"
             break
 
         # LLM decisions
@@ -151,19 +173,38 @@ def run_task2_episode(cfg, client, seed):
 
         world.step()
 
+    if episode_result == "partial":
+        timeout = 1
     total_prey = sum(getattr(b, "prey_collected", 0) for b in bats)
     total_pred_incidents = sum(getattr(b, "predator_events", 0) for b in bats)
     alive_count = sum(1 for b in bats if getattr(b, "alive", True))
+    dead_count = len(bats) - alive_count
     survival_rate = alive_count / max(1, len(bats))
 
     first_prey_steps = [b.first_prey_step for b in bats if b.first_prey_step is not None]
     time_to_first_prey = min(first_prey_steps) if first_prey_steps else None
+
+    prey_completion_rate = total_prey / max(1, initial_prey_count)
+
+    llm_bats = [b for b in bats if isinstance(b, LLMBat)]
+    llm_survived = 1 if any(getattr(b, "alive", True) for b in llm_bats) else 0
+
+    episodes_with_zero_deaths = 1 if dead_count == 0 else 0
 
     return {
         "total_prey_collected": total_prey,
         "predator_incidents": total_pred_incidents,
         "survival_rate": survival_rate,
         "time_to_first_prey": time_to_first_prey,
+        "prey_completion_rate": prey_completion_rate,
+        "all_prey_collected": all_prey_collected,
+        "time_to_all_prey": time_to_all_prey,
+        "bats_eaten": dead_count,
+        "llm_survived": llm_survived,
+        "timeout": timeout,
+        "all_bats_dead": all_bats_dead,
+        "episodes_with_zero_deaths": episodes_with_zero_deaths,
+        "episode_result": episode_result,
     }
 
 
@@ -244,6 +285,15 @@ def run_task2_batch():
                 "predator_incidents",
                 "survival_rate",
                 "time_to_first_prey",
+                "prey_completion_rate",
+                "all_prey_collected",
+                "time_to_all_prey",
+                "bats_eaten",
+                "llm_survived",
+                "timeout",
+                "all_bats_dead",
+                "episodes_with_zero_deaths",
+                "episode_result",
             ],
         )
         writer.writeheader()
