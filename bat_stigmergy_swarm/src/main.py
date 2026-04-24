@@ -1088,23 +1088,63 @@ def build_world_and_bats(cfg, client):
     return world, bats
 
 
-def main():
+# def main():
     
+#     cfg = SimConfig()
+
+#     if len(sys.argv) >= 2:
+#         cfg.task = int(sys.argv[1])
+#     if len(sys.argv) >= 3 and cfg.task == 1:
+#         .3
+#         3
+#         cfg.task1_layout = sys.argv[2]
+#     random.seed(0)
+#     pygame.init()
+#     os.makedirs("frames", exist_ok=True)
+#     os.makedirs("gifs", exist_ok=True)
+
+#     record_gif = False
+#     saved_frames = []
+
+def main():
     cfg = SimConfig()
 
     if len(sys.argv) >= 2:
         cfg.task = int(sys.argv[1])
     if len(sys.argv) >= 3 and cfg.task == 1:
-        .3
-        3
         cfg.task1_layout = sys.argv[2]
-    random.seed(0)
+
+    # optional env overrides for scripted runs
+    sim_seed = int(os.getenv("SIM_SEED", "0"))
+    random.seed(sim_seed)
+
+    cfg.n_bats = int(os.getenv("CFG_N_BATS", str(cfg.n_bats)))
+    cfg.n_llm_bats = int(os.getenv("CFG_N_LLM_BATS", str(cfg.n_llm_bats)))
+    cfg.n_prey = int(os.getenv("CFG_N_PREY", str(cfg.n_prey)))
+    cfg.n_predators = int(os.getenv("CFG_N_PREDATORS", str(cfg.n_predators)))
+    cfg.max_steps = int(os.getenv("CFG_MAX_STEPS", str(cfg.max_steps)))
+    cfg.ping_noise = float(os.getenv("CFG_PING_NOISE", str(cfg.ping_noise)))
+    cfg.predator_radius = int(os.getenv("CFG_PREDATOR_RADIUS", str(cfg.predator_radius)))
+    cfg.predator_move_period = int(os.getenv("CFG_PREDATOR_MOVE_PERIOD", str(cfg.predator_move_period)))
+
+    cfg.stigmergy_on = os.getenv("CFG_STIGMERGY_ON", "1") == "1"
+    cfg.privileged_obs = os.getenv("CFG_PRIVILEGED_OBS", "1") == "1"
+    cfg.recruitment_on = os.getenv("CFG_RECRUITMENT_ON", "1") == "1"
+
     pygame.init()
     os.makedirs("frames", exist_ok=True)
     os.makedirs("gifs", exist_ok=True)
 
-    record_gif = False
+    record_gif = os.getenv("GIF_RECORD", "0") == "1"
+    gif_name_override = os.getenv("GIF_NAME", "").strip()
     saved_frames = []
+    if record_gif:
+        for fn in os.listdir("frames"):
+            if fn.endswith(".png"):
+                try:
+                    os.remove(os.path.join("frames", fn))
+                except OSError:
+                    pass
 
     screen = pygame.display.set_mode((cfg.window_w, cfg.window_h))
     pygame.display.set_caption("Bat Stigmergy Swarm")
@@ -1573,7 +1613,7 @@ def main():
 
     if record_gif and saved_frames:
         images = [imageio.imread(fp) for fp in saved_frames]
-        gif_name = f"gifs/task_{cfg.task}_run.gif"
+        gif_name = gif_name_override if gif_name_override else f"gifs/task_{cfg.task}_run.gif"
         imageio.mimsave(gif_name, images, fps=12)
         print(f"Saved GIF to {gif_name}")
 
