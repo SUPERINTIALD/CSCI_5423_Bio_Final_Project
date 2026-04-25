@@ -110,6 +110,31 @@ def run_task2_episode(cfg, client, seed):
                 b.stuck_steps += 1
 
             # predator incidents
+
+            # predator kill check (match interactive sim)
+            nearest_pred = None
+            nearest_d2 = 10**9
+
+            for pred in getattr(world, "predators", []):
+                px, py = pred["pos"]
+                dxp = abs(b.x - px)
+                dyp = abs(b.y - py)
+                dxp = min(dxp, world.w - dxp)
+                dyp = min(dyp, world.h - dyp)
+                d2 = dxp * dxp + dyp * dyp
+
+                if d2 < nearest_d2:
+                    nearest_d2 = d2
+                    nearest_pred = (px, py, dxp, dyp)
+
+            if nearest_pred is not None:
+                px, py, dxp, dyp = nearest_pred
+
+                if dxp * dxp + dyp * dyp <= max(2, cfg.predator_radius // 2) ** 2:
+                    if getattr(b, "alive", True):
+                        b.alive = False
+                        b.done = True
+                    continue
             if world.predator_risk(b.x, b.y) > 0:
                 b.predator_events += 1
 
@@ -190,7 +215,7 @@ def run_task2_episode(cfg, client, seed):
     llm_survived = 1 if any(getattr(b, "alive", True) for b in llm_bats) else 0
 
     episodes_with_zero_deaths = 1 if dead_count == 0 else 0
-
+    all_prey_collected = 1 if len(world.prey) == 0 else 0
     return {
         "total_prey_collected": total_prey,
         "predator_incidents": total_pred_incidents,
