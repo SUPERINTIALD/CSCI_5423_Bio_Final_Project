@@ -1135,7 +1135,14 @@ def main():
     os.makedirs("frames", exist_ok=True)
     os.makedirs("gifs", exist_ok=True)
 
+
     record_gif = os.getenv("GIF_RECORD", "0") == "1"
+    output_name = os.getenv("MEDIA_NAME") or os.getenv("GIF_NAME") or f"videos/task_{cfg.task}_run.mp4"
+    hide_controls_for_export = os.getenv("HIDE_CONTROLS", "1") == "1"
+
+    task_label = os.getenv("TASK_LABEL", "")
+    condition_label = os.getenv("CONDITION_LABEL", "")
+    layout_label = os.getenv("LAYOUT_LABEL", "")
     gif_name_override = os.getenv("GIF_NAME", "").strip()
     saved_frames = []
     if record_gif:
@@ -1186,7 +1193,7 @@ def main():
     world.bats = bats
     running = True
     show_hud = True
-    show_controls = True
+    show_controls = not (record_gif and cfg.task == 2 and hide_controls_for_export)
     llm_last_rationale = ""
 
     while running:
@@ -1582,7 +1589,14 @@ def main():
         llm_bat = next((b for b in bats if isinstance(b, LLMBat)), None)
         llm_mode = llm_bat.llm_mode if llm_bat else "N/A"
         llm_call = llm_bat.last_call_type if llm_bat else "N/A"
-        info = [
+        display_info = []
+        if task_label:
+            display_info.append(f"Task: {task_label}")
+        if condition_label:
+            display_info.append(f"Condition: {condition_label}")
+        if layout_label:
+            display_info.append(f"Layout: {layout_label}")
+        info = display_info + [
             f"Task={cfg.task}  Steps={world.step_count}/{cfg.max_steps}",
             f"Prey total={initial_prey}  eaten={prey_eaten}  left={prey_left}",
             f"Bats total={total_bats}  dead={dead_bats}  alive={alive_bats}",
@@ -1611,11 +1625,23 @@ def main():
             pygame.image.save(screen, frame_path)
             saved_frames.append(frame_path)
 
+    # if record_gif and saved_frames:
+    #     images = [imageio.imread(fp) for fp in saved_frames]
+    #     gif_name = gif_name_override if gif_name_override else f"gifs/task_{cfg.task}_run.gif"
+    #     imageio.mimsave(gif_name, images, fps=12)
+    #     print(f"Saved GIF to {gif_name}")
     if record_gif and saved_frames:
         images = [imageio.imread(fp) for fp in saved_frames]
-        gif_name = gif_name_override if gif_name_override else f"gifs/task_{cfg.task}_run.gif"
-        imageio.mimsave(gif_name, images, fps=12)
-        print(f"Saved GIF to {gif_name}")
+
+        if output_name.lower().endswith(".mp4"):
+            writer = imageio.get_writer(output_name, fps=12, codec="libx264")
+            for img in images:
+                writer.append_data(img)
+            writer.close()
+            print(f"Saved MP4 to {output_name}")
+        else:
+            imageio.mimsave(output_name, images, fps=12)
+            print(f"Saved GIF to {output_name}")
 
     pygame.quit()
 
