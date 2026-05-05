@@ -43,11 +43,9 @@ Echolocation is modeled as eight-direction ray casting with configurable uniform
 
 In **Task 1**, the LLM returns a directional action (`N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`, or `STAY`) together with a brief rationale.
 
-In **Task 2**, the LLM does not directly choose exact low-level movement. Instead, it returns a high-level mode (`FORAGE`, `FLEE`, or `EXPLORE`) and a social call (`BUZZ`, `ALARM`, or `NONE`), and the simulator resolves the final movement heuristically. Between LLM queries, the bat repeats its most recent decision.
+In **Task 2**, the LLM does not directly choose exact low-level movement. Instead, it returns a high-level mode (`FORAGE`, `FLEE`, or `EXPLORE`) and a social call (`BUZZ`, `ALARM`, or `NONE`), and the simulator resolves the final movement heuristically.
 
 When the LLM bat emits a `BUZZ` call, it recruits nearby hungry bats within Manhattan distance 14 into a 30-step follow-leader mode. When it emits `ALARM`, it recruits nearby bats within distance 16 into a 24-step coordinated escape.
-
-Between LLM queries, the bat repeats its most recent decision. The model used is Qwen3.5-0.8B in GGUF format, served locally at `127.0.0.1:1234` through LM Studio with temperature 0.2.
 
 
 ### 3.3 Task 1: Cave Exit Navigation
@@ -159,7 +157,7 @@ Prey collection remains nearly identical across conditions, at roughly 46 prey o
 ## 6. Project Contributions
 
 - **Yuri Fung:** Led the full implementation of the simulator, including the rule-based and LLM bat agents, cave and open-world environments, predator and prey logic, batch evaluation scripts, analysis scripts, GIF and MP4 generation, and the core experimental pipeline.
-- **Joel Carlson:** Prepared the presentation slides and wrote most of the report draft.
+- **Joel Carlson:** Prepared the presentation slides and wrote report draft/final.
 
 ---
 
@@ -178,3 +176,4 @@ Jürgen, S., et al. (2024). LLM2Swarm: Robot Swarms that Responsively Reason, Pl
 Simulation video: [Task 2 Video](https://youtu.be/HDPGYy7S6OE)
 
 Code repository: [LLM-Augmented Stigmergy GitHub](https://github.com/SUPERINTIALD/CSCI_5423_Bio_Final_Project)
+
