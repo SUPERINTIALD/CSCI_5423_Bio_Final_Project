@@ -156,8 +156,9 @@ Prey collection remains nearly identical across conditions, at roughly 46 prey o
 
 ## 6. Project Contributions
 
-- **Yuri Fung:** Led the full implementation of the simulator, including the rule-based and LLM bat agents, cave and open-world environments, predator and prey logic, batch evaluation scripts, analysis scripts, GIF and MP4 generation, and the core experimental pipeline.
-- **Joel Carlson:** Prepared the presentation slides and wrote report draft/final.
+- **Yuri Fung:** Led the project implementation and experimental pipeline, including the rule-based and LLM bat agents, cave and open-world environments, predator and prey logic, stigmergy mechanisms, batch evaluation scripts, analysis scripts, media generation, project proposal, report writing, and final paper organization.
+
+- **Joel Carlson:** Contributed to project planning, project proposal, brainstorming, presentation slides, discussion of experimental framing, final project direction, results, and final paper.
 
 ---
 
