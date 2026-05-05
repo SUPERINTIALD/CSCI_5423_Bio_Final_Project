@@ -11,7 +11,7 @@ Swarm intelligence emerges when many simple agents follow local rules and coordi
 
 Large language models, or LLMs, have recently shown strong reasoning ability in agent settings. This raises a natural question: can a single LLM-controlled agent improve the performance of a rule-based swarm by acting as an informed individual?
 
-This paper presents a simulation study of LLM-augmented bat swarms in two tasks: cave exit navigation (Task 1) and open-world foraging with predator avoidance (Task 2). In both tasks, a single LLM bat operates alongside rule-based bats in a shared acoustic stigmergy environment. The LLM bat is powered by Qwen3.5-0.8B served locally through LM Studio. We show that the LLM bat substantially improves collective navigation performance in Task 1. In Task 2, the results are more mixed. The informed bat helps expose useful trade-offs between recruitment, safety, and foraging efficiency. Overall, the results support the informed-individual hypothesis of Couzin et al. (2005): a small minority with better information can influence group behavior through local motion decisions and shared acoustic signaling.
+This paper presents a simulation study of LLM-augmented bat swarms in two tasks: cave exit navigation (Task 1) and open-world foraging with predator avoidance (Task 2). In both tasks, a single LLM bat operates alongside rule-based bats in a shared acoustic stigmergy environment. The LLM bat is powered by Qwen3.5-0.8B served locally through LM Studio. We show that the LLM bat substantially improves collective navigation performance in Task 1. In Task 2, the results are more mixed. The informed bat helps expose useful trade-offs between recruitment, safety, and foraging efficiency. Overall, the results support the informed-individual hypothesis of Couzin et al. (2005):  Task 1 strongly supports an informed-individual effect in cluttered navigation, while Task 2 shows a more mixed outcome in which stigmergy is a strong baseline and the current recruitment-based LLM variants do not outperform it.
 
 ---
 
@@ -19,7 +19,7 @@ This paper presents a simulation study of LLM-augmented bat swarms in two tasks:
 
 **Stigmergy.** Stigmergy describes indirect coordination through environmental modification. Ants deposit pheromones to mark food trails, and later ants follow and reinforce those trails. This produces collective foraging without any central controller. In our system, bats deposit acoustic signals into a shared soundscape. We model two channels: buzz for nearby prey and alarm for nearby predators. These signals decay and diffuse over time, so they function as a two-channel digital pheromone.
 
-**Bat echolocation and social foraging.** Real bats use echolocation for both navigation and social coordination. Bohn et al. (2009) showed that bats eavesdrop on one another's feeding buzzes to locate prey. Group foraging can therefore emerge through passive acoustic coupling. This directly motivates our buzz and alarm design. Rule-based bats deposit and follow acoustic gradients in the same way that real bats exploit social acoustic cues.
+**Bat echolocation and social foraging.** Real bats use echolocation for both navigation and social coordination. Bohn et al. (2009) showed that bats eavesdrop on one another's feeding buzzes to locate prey. Group foraging can therefore emerge through passive acoustic coupling. This directly motivates our buzz and alarm design. Rule-based bats deposit and follow acoustic gradients in a way inspired by how real bats exploit social acoustic cues.
 
 **Informed individuals in animal groups.** Couzin et al. (2005) showed with an individual-based model that a small number of informed individuals can reliably steer an entire moving group toward a goal. They do not need to broadcast their identity to do so. Larger groups can often be guided by a smaller proportion of informed agents. This result is the theoretical foundation for our LLM bat design. We embed one agent with stronger reasoning ability into a swarm of 14 rule-based bats.
 
@@ -39,15 +39,22 @@ Echolocation is modeled as eight-direction ray casting with configurable uniform
 
 **RuleBasedBat.** At each step, a rule-based bat evaluates neighboring cells with a weighted combination of local buzz signal, local alarm signal, and a task-specific bias. In Task 1, that bias encourages rightward progress toward the exit. In Task 2, it encourages exploration and prey seeking while avoiding risk. The bat emits a `BUZZ` call when prey-related cues are strong and an `ALARM` call when predator-related cues are strong. Movement is resolved with a priority-based collision system that reduces deadlocks.
 
-**LLMBat.** Every 5 simulation steps, the LLM bat constructs a structured prompt that includes its current position, echolocation distances in eight directions, local buzz and alarm levels, and nearby bat positions. In privileged-observation conditions, the prompt also includes the bearing and distance to the nearest predator. The prompt instructs the LLM to return one directional action (`N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`, or `STAY`) and one social call (`BUZZ`, `ALARM`, or `NONE`) with a brief rationale. Between LLM queries, the bat repeats its most recent decision. The model used is Qwen3.5-0.8B in GGUF format, served locally at `127.0.0.1:1234` through LM Studio with temperature 0.2.
+**LLMBat.** The LLM bat is queried every 5 simulation steps. In both tasks, its prompt includes its current position, echolocation distances in eight directions, local buzz and alarm levels, and nearby bat positions. In privileged-observation conditions, the prompt also includes extra information about nearby predators. The model used is Qwen3.5-0.8B in GGUF format, served locally at `127.0.0.1:1234` through LM Studio with temperature 0.2.
+
+In **Task 1**, the LLM returns a directional action (`N`, `NE`, `E`, `SE`, `S`, `SW`, `W`, `NW`, or `STAY`) together with a brief rationale.
+
+In **Task 2**, the LLM does not directly choose exact low-level movement. Instead, it returns a high-level mode (`FORAGE`, `FLEE`, or `EXPLORE`) and a social call (`BUZZ`, `ALARM`, or `NONE`), and the simulator resolves the final movement heuristically. Between LLM queries, the bat repeats its most recent decision.
 
 When the LLM bat emits a `BUZZ` call, it recruits nearby hungry bats within Manhattan distance 14 into a 30-step follow-leader mode. When it emits `ALARM`, it recruits nearby bats within distance 16 into a 24-step coordinated escape.
+
+Between LLM queries, the bat repeats its most recent decision. The model used is Qwen3.5-0.8B in GGUF format, served locally at `127.0.0.1:1234` through LM Studio with temperature 0.2.
+
 
 ### 3.3 Task 1: Cave Exit Navigation
 
 Bats spawn in a procedurally generated cave and must reach an exit region on the right side of the grid. Four cave layouts are tested: *corridor* for a basic passage, *bottleneck* for a narrow chokepoint, *zigzag* for a winding path, and *cul-de-sac* for a dead-end branch that requires backtracking. The task ends when all bats escape or when 1000 steps elapse.
 
-**Experimental design:** 4 layouts × 3 noise levels × 2 conditions (rule-only, one-LLM) × 20 random seeds = 480 episodes.
+**Experimental design:** 4 layouts × 3 noise levels × 2 conditions x 10 random seeds = 240 episodes.
 
 **Metrics:** escape rate, mean time to exit, path efficiency, and jam events. Escape rate is the fraction of bats that reach the exit. Mean time to exit is measured in simulation steps. Path efficiency is computed as net rightward progress divided by total path length. Jam events count multi-step stuck episodes per bat.
 
@@ -80,7 +87,8 @@ Adding a single LLM bat produced consistent improvements in collective navigatio
 **Escape rate.** Figure 1 shows escape rates by layout. The LLM condition improved escape rate in every layout. The largest gain occurred in the bottleneck layout, which is the most spatially constrained. Escape rate rose from 51% in the rule-only condition to 91% with one LLM bat. In the corridor, cul-de-sac, and zigzag layouts, escape rates improved from 80%, 79%, and 69% to 96%, 97%, and 90%, respectively.
 
 ![Escape Rate, Bottleneck](bat_stigmergy_swarm/results/task1_20260428_205154/task1_bottleneck_escape_rate.png)
-*Figure 1a: Escape rate in the bottleneck layout by condition and noise level. Error bars show ±1 standard deviation across 20 seeds.*
+
+*Figure 1a: Escape rate in the bottleneck layout by condition and noise level. Error bars show ±1 standard deviation across 10 seeds.*
 
 ![Escape Rate, Corridor](bat_stigmergy_swarm/results/task1_20260428_205154/task1_corridor_escape_rate.png)
 *Figure 1b: Escape rate in the corridor layout.*
